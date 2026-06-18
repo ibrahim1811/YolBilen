@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "611310540307",
+    "project_id": "yolbulan",
+    "storage_bucket": "yolbulan.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:611310540307:android:15e3e78792f8579d7391e6",
+        "android_client_info": {
+          "package_name": "com.yolbilen.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "611310540307-kpm6dnoqh539ddj8k5b76dj764jal5sh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.yolbilen.app",
+            "certificate_hash": "65625b63510d90571db23943060f3493e2e7e806"
+          }
+        },
+        {
+          "client_id": "611310540307-f7tm4vb84oe3coloom9fkehqob34fh1q.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDw4x2JyIknhp94h6PMs3CAhfKpOTtOR-E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "611310540307-f7tm4vb84oe3coloom9fkehqob34fh1q.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

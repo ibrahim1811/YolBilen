@@ -1,0 +1,164 @@
+========================================================
+  YOLBUL — ESHOT SEFER SAATLERİ OTOMATİK YENİLEME
+  Her gün saat 05:00'de otomatik çalışır (GitHub Actions)
+========================================================
+
+GENEL MANTIK
+------------
+  acikveri.bizizmir.com (CKAN API)
+       ↓ her gün 05:00
+  GitHub Actions (ücretsiz, bulutta çalışır)
+       ↓
+  Firebase Firestore (schedules koleksiyonu)
+       ↓ uygulama açıldığında
+  AsyncStorage cache (7 gün)
+       ↓
+  LineDetail ekranı → Gerçek sefer saatleri
+
+
+ADIM 1 — GitHub Hesabı Aç (zaten varsa atla)
+---------------------------------------------
+  https://github.com adresine git, hesap oluştur.
+  E-posta: ikcdeveloper@gmail.com kullanabilirsin.
+
+
+ADIM 2 — Yeni Repo Oluştur
+---------------------------
+  1. github.com'a giriş yap
+  2. Sağ üstteki "+" → "New repository" tıkla
+  3. Ayarlar:
+       Repository name : yolbul
+       Visibility      : Private  ← önemli, kodun gizli kalsın
+       README ekle     : Hayır (kutu işaretleme)
+  4. "Create repository" tıkla
+  5. Çıkan sayfadaki repo linkini kopyala
+     Örnek: https://github.com/KULLANICI_ADIN/yolbul.git
+
+
+ADIM 3 — Kodu Repodan Gönder
+-----------------------------
+  PowerShell'i aç, sırasıyla çalıştır:
+
+    cd C:\Users\Kayra\yolbul
+
+    git init
+    git branch -M main
+    git remote add origin https://github.com/KULLANICI_ADIN/yolbul.git
+    git add .
+    git commit -m "ilk commit"
+    git push -u origin main
+
+  NOT: GitHub kullanıcı adın ve şifren sorulabilir.
+       Şifre yerine "Personal Access Token" gerekebilir,
+       aşağıda Adım 3B'de anlatıldı.
+
+ADIM 3B — GitHub Personal Access Token (şifre sorarsa)
+-------------------------------------------------------
+  1. github.com → sağ üst profil fotoğrafı → Settings
+  2. Sol menüde en aşağı → "Developer settings"
+  3. "Personal access tokens" → "Tokens (classic)"
+  4. "Generate new token (classic)" tıkla
+  5. Note: yolbul-push
+     Expiration: 90 days
+     Scope: [x] repo  (sadece bunu işaretle)
+  6. "Generate token" → çıkan kodu KOPYALA (bir daha göremezsin!)
+  7. git push sorarken şifre yerine bu token'ı yapıştır
+
+
+ADIM 4 — Firebase Service Account'u Secret Olarak Ekle
+-------------------------------------------------------
+  Bu adım olmadan GitHub Actions Firestore'a yazamaz!
+
+  1. GitHub'da reponun sayfasına git
+  2. Üstteki menüden "Settings" tıkla
+  3. Sol menüden "Secrets and variables" → "Actions"
+  4. "New repository secret" tıkla
+  5. Şu bilgileri gir:
+       Name  : FIREBASE_SERVICE_ACCOUNT
+       Secret: (service account dosyasının İÇERİĞİ)
+
+  Service account dosyasının içeriğini nasıl alırsın:
+    PowerShell'de şunu çalıştır:
+      Get-Content "C:\Users\Kayra\Downloads\yolbulan-firebase-adminsdk-fbsvc-52b43fba73.json"
+    Çıkan metni kopyalayıp Secret alanına yapıştır.
+
+  6. "Add secret" tıkla
+
+
+ADIM 5 — İlk Çalışmayı Test Et
+--------------------------------
+  1. GitHub'da reponun sayfasına git
+  2. Üstteki "Actions" sekmesine tıkla
+  3. Sol tarafta "Sync ESHOT Schedules to Firestore" görünür
+  4. "Run workflow" → "Run workflow" tıkla
+  5. Yeşil tik ✓ görürsen başarılı!
+     Kırmızı X görürsen loglara bak, hatayı buraya sor.
+
+
+ADIM 6 — Otomatik Çalışmayı Doğrula
+--------------------------------------
+  .github/workflows/sync-schedules.yml dosyasında şu satır var:
+    cron: '0 2 * * *'   → UTC 02:00 = Türkiye 05:00
+
+  Yani her gün saat 05:00'de GitHub Actions otomatik:
+    1. CKAN API'den 101.435 kayıt çeker
+    2. 441 hattı Firebase Firestore'a yazar
+    3. Uygulama bir sonraki açılışında yeni saatleri görür
+
+
+MANUEL YENİLEME (GitHub olmadan da yapılabilir)
+------------------------------------------------
+  Eğer GitHub kurmak istemezsen veya acil güncelleme gerekirse
+  PowerShell'de şunu çalıştır:
+
+    cd C:\Users\Kayra\yolbul
+    $env:SERVICE_ACCOUNT="C:\Users\Kayra\Downloads\yolbulan-firebase-adminsdk-fbsvc-52b43fba73.json"
+    node scripts/syncSchedulesToFirestore.js
+
+  ~3-5 dakika sürer, Firestore güncellenir.
+
+
+GÜVENLİK NOTLARI
+-----------------
+  ❌ serviceAccount.json dosyasını GIT'E EKLEME → .gitignore'a eklendi
+  ❌ serviceAccount.json dosyasını kimseyle paylaşma
+  ❌ serviceAccount.json'u kod içine yazma
+  ✓  GitHub Secret olarak sakla (şifreli, güvenli)
+  ✓  Downloads klasöründe şimdilik dur, kaybolmasın
+
+
+FIRESTORE YAPISI (bilgi amaçlı)
+---------------------------------
+  schedules/
+    "5"/              ← hat numarası
+      weekday:
+        gidis: ["06:00", "06:30", ...]   ← A→B yönü
+        donus: ["06:35", "07:10", ...]   ← B→A yönü
+      saturday:
+        gidis: [...]
+        donus: [...]
+      sunday:
+        gidis: [...]
+        donus: [...]
+      updatedAt: 2026-06-18T...
+
+  meta/
+    scheduleSync/
+      lastUpdated: 2026-06-18T...
+      totalLines: 441
+      totalRecords: 101435
+      source: "acikveri.bizizmir.com"
+
+
+UYGULAMA TARAFI (teknik, geliştirici notu)
+-------------------------------------------
+  Dosya: src/services/firebase/scheduleService.ts
+  - getLineScheduleFromFirestore(lineNumber) fonksiyonu
+  - Önce AsyncStorage cache kontrol eder (7 günlük)
+  - Cache yoksa veya eskiyse Firestore'dan çeker
+  - Tekrar cache'e yazar
+  - LineDetailScreen bu servisi kullanıyor
+
+========================================================
+  Son sync: 18 Haziran 2026 — 441 hat — 101.435 kayıt
+========================================================

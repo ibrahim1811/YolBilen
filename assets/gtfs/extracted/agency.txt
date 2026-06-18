@@ -1,0 +1,2 @@
+agency_id,agency_name,agency_url,agency_timezone,agency_phone,agency_lang
+1,Eshot,http://www.eshot.gov.tr,Europe/Istanbul,0 232 320 0 320,tr

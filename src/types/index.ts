@@ -1,0 +1,167 @@
+export interface User {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  photoURL: string | null;
+  isGuest: boolean;
+  contributionPoints: number;
+  badges: string[];
+}
+
+export interface Location {
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface RouteStop {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface Route {
+  id: string;
+  lineNumber: string;
+  lineName: string;
+  estimatedDuration: number;
+  transfers: Transfer[];
+  nextArrival: number;
+  crowdLevel: CrowdLevel;
+  sunAnalysis?: SunAnalysis;
+  boardingStop?: RouteStop;
+  alightingStop?: RouteStop;
+}
+
+export interface Transfer {
+  lineNumber: string;
+  stopName: string;
+  waitTime: number;
+}
+
+export type CrowdLevel = 'low' | 'medium' | 'high' | 'very_high';
+
+export interface SunAnalysis {
+  recommendedSide: 'left' | 'right';
+  leftPercentage: number;
+  rightPercentage: number;
+  description: string;
+}
+
+export interface LineStats {
+  lineNumber: string;
+  totalFeedbacks: number;
+  ac_good: number;
+  ac_medium: number;
+  ac_broken: number;
+  comfort_comfortable: number;
+  comfort_medium: number;
+  comfort_uncomfortable: number;
+  crowd_seated: number;
+  crowd_standing: number;
+  crowd_very_crowded: number;
+  temp_cool: number;
+  temp_normal: number;
+  temp_hot: number;
+  lastUpdated: Date;
+}
+
+export interface ComfortScore {
+  lineNumber: string;
+  totalFeedbacks: number;
+  acScore: number;
+  crowdScore: number;
+  comfortScore: number;
+  overall: number;
+}
+
+export type FavoriteType = 'home' | 'work' | 'school' | 'line' | 'custom';
+
+export interface FavoriteLocation {
+  id: string;
+  userId: string;
+  type: FavoriteType;
+  label: string;
+  location: Location;
+  createdAt: Date;
+}
+
+export interface FavoriteLine {
+  id: string;
+  userId: string;
+  lineNumber: string;
+  lineName: string;
+  createdAt: Date;
+}
+
+export interface Feedback {
+  id?: string;
+  userId: string;
+  routeId: string;
+  lineNumber: string;
+  comfort: 'comfortable' | 'medium' | 'uncomfortable';
+  ac: 'good' | 'medium' | 'broken';
+  temperature: 'cool' | 'normal' | 'hot';
+  crowd: 'seated' | 'standing' | 'very_crowded';
+  timestamp: Date;
+}
+
+export interface WeatherData {
+  temperature: number;
+  feelsLike: number;
+  weatherCode: number;
+  description: string;
+  icon: string;
+  isHot: boolean;
+  isRainy: boolean;
+}
+
+export interface Stop {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  lines: string[];
+}
+
+export interface StopArrival {
+  lineNumber: string;
+  lineName: string;
+  minutesAway: number;
+  direction: string;
+}
+
+export interface Badge {
+  id: string;
+  icon: string;
+  label: string;
+  description: string;
+  requiredPoints: number;
+  earned: boolean;
+}
+
+export type RootStackParamList = {
+  Login: undefined;
+  Register: undefined;
+  Main: undefined;
+  RouteSearch: undefined;
+  RouteResults: { origin: Location; destination: Location };
+  SunAnalysis: { route: Route };
+  LineDetail: { lineNumber: string; lineName: string };
+  StopDetail: { stop: Stop };
+  RouteMap: { route: Route };
+};
+
+export interface NotificationPrefs {
+  busArrivals: boolean;
+  lineAlerts: boolean;
+  crowdAlerts: boolean;
+}
+
+export type TabParamList = {
+  Home: undefined;
+  Lines: undefined;
+  Community: undefined;
+  Profile: undefined;
+};

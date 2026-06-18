@@ -1,0 +1,31 @@
+name: Sync ESHOT Schedules to Firestore
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # Her gün saat 02:00 UTC (05:00 Türkiye)
+  workflow_dispatch:        # Manuel tetikleme için
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write service account
+        run: echo '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}' > serviceAccount.json
+
+      - name: Run sync
+        run: SERVICE_ACCOUNT=./serviceAccount.json node scripts/syncSchedulesToFirestore.js
+
+      - name: Cleanup
+        if: always()
+        run: rm -f serviceAccount.json

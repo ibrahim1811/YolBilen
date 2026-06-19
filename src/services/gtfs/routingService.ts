@@ -1,7 +1,8 @@
-import type { Route, Location, CrowdLevel, RouteStop } from '../../types';
+import type { Route, Location, CrowdLevel, RouteStop, RouteStep } from '../../types';
 import { IZMIR_ROUTES } from '../../data/izmir-routes';
 import { getStops, getStopRoutes } from '../../data/gtfsData';
 import { analyzeSunExposure } from '../sun/sunAnalysis';
+import { getNextArrivalMins } from '../firebase/scheduleService';
 
 const CROWD_CYCLE: CrowdLevel[] = ['low', 'medium', 'high', 'very_high'];
 
@@ -17,6 +18,82 @@ function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: num
 
 function locToPoint(loc: Location) {
   return { lat: loc.latitude, lon: loc.longitude };
+}
+
+function walkCalc(
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number }
+): { mins: number; meters: number } {
+  const meters = Math.round(haversineKm({ lat: from.latitude, lon: from.longitude }, { lat: to.latitude, lon: to.longitude }) * 1000);
+  return { meters, mins: Math.max(1, Math.round(meters / 84)) };
+}
+
+let lineStopsCache: Map<string, Array<{ name: string; latitude: number; longitude: number }>> | null = null;
+
+function getLineStopsMap(): Map<string, Array<{ name: string; latitude: number; longitude: number }>> {
+  if (lineStopsCache) return lineStopsCache;
+  const sr = getStopRoutes();
+  const stops = getStops();
+  const byId = new Map(stops.map(s => [s.id, s]));
+  lineStopsCache = new Map();
+  for (const [stopId, lines] of Object.entries(sr)) {
+    const s = byId.get(stopId);
+    if (!s) continue;
+    for (const line of lines) {
+      if (!lineStopsCache.has(line)) lineStopsCache.set(line, []);
+      lineStopsCache.get(line)!.push({ name: s.name, latitude: s.lat, longitude: s.lon });
+    }
+  }
+  return lineStopsCache;
+}
+
+function intermediateStops(
+  lineNum: string,
+  board: { latitude: number; longitude: number },
+  alight: { latitude: number; longitude: number }
+): Array<{ name: string; latitude: number; longitude: number }> {
+  const all = getLineStopsMap().get(lineNum) ?? [];
+  const dx = alight.longitude - board.longitude;
+  const dy = alight.latitude - board.latitude;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return [];
+  return all
+    .map(s => ({ ...s, t: ((s.longitude - board.longitude) * dx + (s.latitude - board.latitude) * dy) / len2 }))
+    .filter(s => s.t > 0.05 && s.t < 0.95)
+    .sort((a, b) => a.t - b.t)
+    .slice(0, 30)
+    .map(({ name, latitude, longitude }) => ({ name, latitude, longitude }));
+}
+
+function buildSteps(
+  origin: Location,
+  destination: Location,
+  lineNum: string,
+  board: RouteStop,
+  alight: RouteStop,
+  nextArrivalMins: number,
+  transitDuration: number
+): RouteStep[] {
+  const toBoard = walkCalc(origin, board);
+  const fromAlight = walkCalc(alight, destination);
+  const now = new Date();
+  const depMins = now.getHours() * 60 + now.getMinutes() + nextArrivalMins;
+  const dh = Math.floor(depMins / 60) % 24;
+  const dm = depMins % 60;
+  const departureTime = `${String(dh).padStart(2, '0')}:${String(dm).padStart(2, '0')}`;
+  return [
+    { type: 'walk', durationMins: toBoard.mins, toStopName: board.name, distanceMeters: toBoard.meters },
+    {
+      type: 'transit',
+      durationMins: Math.max(1, transitDuration - toBoard.mins - fromAlight.mins),
+      lineNumber: lineNum,
+      boardStop: { name: board.name, latitude: board.latitude, longitude: board.longitude },
+      alightStop: { name: alight.name, latitude: alight.latitude, longitude: alight.longitude },
+      intermediateStops: intermediateStops(lineNum, board, alight),
+      departureTime,
+    },
+    { type: 'walk', durationMins: fromAlight.mins, toStopName: destination.name, distanceMeters: fromAlight.meters },
+  ];
 }
 
 function nearestStops(loc: Location, k = 8): RouteStop[] {
@@ -59,17 +136,20 @@ export function findRoutes(origin: Location, destination: Location): Route[] {
     const meta = routeMeta(lineNum);
     if (!meta) continue;
     const idx = results.length;
+    const nextArrival = getNextArrivalMins(lineNum);
+    const estimatedDuration = Math.round(distKm * 5 + 8 + idx * 2);
     results.push({
       id: `direct-${lineNum}`,
       lineNumber: lineNum,
       lineName: meta.lineName,
-      estimatedDuration: Math.round(distKm * 3 + 5 + idx * 2),
+      estimatedDuration,
       transfers: [],
-      nextArrival: 1 + (idx * 4) % 18,
+      nextArrival,
       crowdLevel: CROWD_CYCLE[idx % 4],
       sunAnalysis,
       boardingStop,
       alightingStop,
+      steps: buildSteps(origin, destination, lineNum, boardingStop, alightingStop, nextArrival, estimatedDuration),
     });
     if (results.length >= 5) break;
   }
@@ -84,17 +164,20 @@ export function findRoutes(origin: Location, destination: Location): Route[] {
         const metaB = routeMeta(lineB);
         if (!metaA || !metaB) continue;
         const idx = results.length;
+        const nextArrival = getNextArrivalMins(lineA);
+        const estimatedDuration = Math.round(distKm * 5 + 22 + idx * 3);
         results.push({
           id: `transfer-${lineA}-${lineB}`,
           lineNumber: lineA,
           lineName: metaA.lineName,
-          estimatedDuration: Math.round(distKm * 3 + 15 + idx * 3),
+          estimatedDuration,
           transfers: [{ lineNumber: lineB, stopName: 'Aktarma Durağı', waitTime: 5 }],
-          nextArrival: 2 + (idx * 5) % 20,
+          nextArrival,
           crowdLevel: CROWD_CYCLE[(idx + 1) % 4],
           sunAnalysis,
           boardingStop,
           alightingStop,
+          steps: buildSteps(origin, destination, lineA, boardingStop, alightingStop, nextArrival, estimatedDuration),
         });
         if (results.length >= 5) break outer;
       }
@@ -103,17 +186,22 @@ export function findRoutes(origin: Location, destination: Location): Route[] {
 
   if (results.length === 0) {
     IZMIR_ROUTES.slice(0, 4).forEach((r, i) => {
+      const nextArrival = getNextArrivalMins(r.lineNumber);
+      const estimatedDuration = Math.round(distKm * 5 + 10 + i * 5);
+      const board = originStops[0];
+      const alight = destStops[0];
       results.push({
         id: `fallback-${r.id}`,
         lineNumber: r.lineNumber,
         lineName: r.lineName,
-        estimatedDuration: Math.round(distKm * 3 + 10 + i * 5),
+        estimatedDuration,
         transfers: [],
-        nextArrival: 3 + i * 4,
+        nextArrival,
         crowdLevel: CROWD_CYCLE[i % 4],
         sunAnalysis,
-        boardingStop: originStops[0],
-        alightingStop: destStops[0],
+        boardingStop: board,
+        alightingStop: alight,
+        steps: board && alight ? buildSteps(origin, destination, r.lineNumber, board, alight, nextArrival, estimatedDuration) : undefined,
       });
     });
   }

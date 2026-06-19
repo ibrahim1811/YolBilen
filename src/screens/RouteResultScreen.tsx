@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Text, useTheme, Appbar, Surface, Divider, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -9,7 +9,7 @@ import { ComfortScoreCard } from '../components/lines/ComfortScoreCard';
 import { AiSummaryCard } from '../components/route/AiSummaryCard';
 import { getLineComfortScore } from '../services/firebase/lineStats';
 import { useWeather } from '../hooks/useWeather';
-import type { ComfortScore } from '../types';
+import type { ComfortScore, RouteStep } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
@@ -155,13 +155,17 @@ export function RouteResultScreen({ navigation }: Props) {
           <SunSideCard analysis={selectedRoute.sunAnalysis} />
         )}
 
+        {selectedRoute.steps && selectedRoute.steps.length > 0 && (
+          <RouteStepsCard steps={selectedRoute.steps} />
+        )}
+
         <Button
           mode="contained"
           style={styles.startBtn}
           contentStyle={styles.startBtnContent}
           icon="navigation"
           labelStyle={styles.startBtnLabel}
-          onPress={() => {}}
+          onPress={() => navigation.navigate('RouteMap', { route: selectedRoute })}
         >
           Yolculuğu Başlat
         </Button>
@@ -185,6 +189,83 @@ function StatItem({ icon, label, value, color }: StatItemProps) {
       <Text style={[styles.statValue, { color: theme.colors.onSurface }]}>{value}</Text>
       <Text style={[styles.statLabel, { color: theme.colors.onSurfaceVariant }]}>{label}</Text>
     </View>
+  );
+}
+
+function RouteStepsCard({ steps }: { steps: RouteStep[] }) {
+  const theme = useTheme();
+  const [expandedIndex, setExpandedIndex] = React.useState<number | null>(null);
+
+  return (
+    <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
+      <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Güzergah Adımları</Text>
+      {steps.map((step, i) => (
+        <View key={i}>
+          {i > 0 && <View style={[styles.stepConnector, { backgroundColor: theme.colors.outlineVariant }]} />}
+          {step.type === 'walk' ? (
+            <View style={styles.stepRow}>
+              <View style={[styles.stepIcon, { backgroundColor: theme.colors.secondaryContainer }]}>
+                <MaterialCommunityIcons name="walk" size={18} color={theme.colors.secondary} />
+              </View>
+              <View style={styles.stepText}>
+                <Text style={[styles.stepMain, { color: theme.colors.onSurface }]}>
+                  {step.durationMins} dk yürüyün
+                </Text>
+                {step.toStopName && (
+                  <Text style={[styles.stepSub, { color: theme.colors.onSurfaceVariant }]}>
+                    {step.toStopName}{step.distanceMeters ? ` (${step.distanceMeters} m)` : ''}
+                  </Text>
+                )}
+              </View>
+            </View>
+          ) : (
+            <View>
+              <TouchableOpacity
+                style={styles.stepRow}
+                onPress={() => setExpandedIndex(expandedIndex === i ? null : i)}
+                activeOpacity={0.7}
+              >
+                <View style={[styles.stepIcon, { backgroundColor: theme.colors.primaryContainer }]}>
+                  <MaterialCommunityIcons name="bus" size={18} color={theme.colors.primary} />
+                </View>
+                <View style={styles.stepText}>
+                  <Text style={[styles.stepMain, { color: theme.colors.onSurface }]}>
+                    {step.departureTime && `${step.departureTime} — `}Hat {step.lineNumber}
+                  </Text>
+                  <Text style={[styles.stepSub, { color: theme.colors.onSurfaceVariant }]}>
+                    {step.boardStop?.name} → {step.alightStop?.name}
+                    {(step.intermediateStops?.length ?? 0) > 0 &&
+                      ` · ${step.intermediateStops!.length} ara durak`}
+                  </Text>
+                </View>
+                {(step.intermediateStops?.length ?? 0) > 0 && (
+                  <MaterialCommunityIcons
+                    name={expandedIndex === i ? 'chevron-up' : 'chevron-down'}
+                    size={20}
+                    color={theme.colors.onSurfaceVariant}
+                  />
+                )}
+              </TouchableOpacity>
+              {expandedIndex === i && (step.intermediateStops?.length ?? 0) > 0 && (
+                <View style={[styles.stopList, { borderLeftColor: theme.colors.primary }]}>
+                  <Text style={[styles.stopItem, { color: theme.colors.onSurface }]}>
+                    {step.boardStop?.name}
+                  </Text>
+                  {step.intermediateStops!.map((s, j) => (
+                    <Text key={j} style={[styles.stopItem, { color: theme.colors.onSurfaceVariant }]}>
+                      {s.name}
+                    </Text>
+                  ))}
+                  <Text style={[styles.stopItem, { color: theme.colors.onSurface }]}>
+                    {step.alightStop?.name}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      ))}
+    </Surface>
   );
 }
 
@@ -236,4 +317,12 @@ const styles = StyleSheet.create({
   startBtnContent: { height: 56 },
   startBtnLabel: { fontSize: 16, fontWeight: '700' },
   mapBtn: { borderRadius: 12 },
+  stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+  stepConnector: { width: 2, height: 12, marginLeft: 19, marginVertical: 2 },
+  stepIcon: { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  stepText: { flex: 1, gap: 2, paddingTop: 2 },
+  stepMain: { fontSize: 14, fontWeight: '600' },
+  stepSub: { fontSize: 12, lineHeight: 18 },
+  stopList: { marginLeft: 50, marginTop: 6, paddingLeft: 12, borderLeftWidth: 2, gap: 2 },
+  stopItem: { fontSize: 12, lineHeight: 20 },
 });

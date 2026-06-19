@@ -4,7 +4,7 @@ import { Appbar, Text, useTheme } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
-import type { RootStackParamList } from '../types';
+import type { RootStackParamList, RouteStep } from '../types';
 import { getLineStopsIndex } from '../data/gtfsData';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RouteMap'>;
@@ -17,8 +17,9 @@ function buildMapHtml(params: {
   boarding: { latitude: number; longitude: number; name: string } | null;
   alighting: { latitude: number; longitude: number; name: string } | null;
   center: [number, number];
+  steps?: RouteStep[];
 }): string {
-  const { stops, polyline, boarding, alighting, center } = params;
+  const { stops, polyline, boarding, alighting, center, steps } = params;
 
   const markersJs = stops
     .map(
@@ -27,24 +28,56 @@ function buildMapHtml(params: {
     )
     .join('\n');
 
+  const transitStep = steps?.find(s => s.type === 'transit');
+
+  // Intermediate stops — small blue dots
+  const intermediateJs = (transitStep?.intermediateStops ?? [])
+    .map(s => `L.circleMarker([${s.latitude},${s.longitude}],{radius:4,color:'#1A73E8',fillColor:'#1A73E8',fillOpacity:0.7,weight:1}).bindPopup(${JSON.stringify(s.name)}).addTo(map);`)
+    .join('\n');
+
+  // Walking segments — dashed gray lines
+  let walkLinesJs = '';
+  if (transitStep?.boardStop && transitStep?.alightStop && boarding && alighting) {
+    const b = transitStep.boardStop;
+    const a = transitStep.alightStop;
+    walkLinesJs =
+      `L.polyline([[${boarding.latitude},${boarding.longitude}],[${b.latitude},${b.longitude}]],{color:'#888',weight:2,dashArray:'5,8'}).addTo(map);\n` +
+      `L.polyline([[${a.latitude},${a.longitude}],[${alighting.latitude},${alighting.longitude}]],{color:'#888',weight:2,dashArray:'5,8'}).addTo(map);`;
+  }
+
+  // Transit polyline through intermediate stops when available
+  let polylineJs: string;
+  if (transitStep?.boardStop && transitStep?.alightStop) {
+    const pts: [number, number][] = [
+      [transitStep.boardStop.latitude, transitStep.boardStop.longitude],
+      ...(transitStep.intermediateStops ?? []).map(s => [s.latitude, s.longitude] as [number, number]),
+      [transitStep.alightStop.latitude, transitStep.alightStop.longitude],
+    ];
+    polylineJs = `L.polyline(${JSON.stringify(pts)},{color:'#1A73E8',weight:3}).addTo(map);`;
+  } else if (polyline.length > 1) {
+    polylineJs = `L.polyline(${JSON.stringify(polyline)},{color:'#1A73E8',weight:3}).addTo(map);`;
+  } else if (boarding && alighting) {
+    polylineJs = `L.polyline([[${boarding.latitude},${boarding.longitude}],[${alighting.latitude},${alighting.longitude}]],{color:'#1A73E8',weight:3,dashArray:'8,4'}).addTo(map);`;
+  } else {
+    polylineJs = '';
+  }
+
   const boardingJs = boarding
-    ? `L.marker([${boarding.latitude},${boarding.longitude}],{icon:greenIcon}).bindPopup('Biniş: ${boarding.name.replace(/'/g, "\\'")}').addTo(map).openPopup();`
+    ? `L.marker([${boarding.latitude},${boarding.longitude}],{icon:greenIcon}).bindPopup(${JSON.stringify('Biniş: ' + boarding.name)}).addTo(map).openPopup();`
     : '';
 
   const alightingJs = alighting
-    ? `L.marker([${alighting.latitude},${alighting.longitude}],{icon:redIcon}).bindPopup('İniş: ${alighting.name.replace(/'/g, "\\'")}').addTo(map);`
+    ? `L.marker([${alighting.latitude},${alighting.longitude}],{icon:redIcon}).bindPopup(${JSON.stringify('İniş: ' + alighting.name)}).addTo(map);`
     : '';
 
-  const polylineJs =
-    polyline.length > 1
-      ? `L.polyline(${JSON.stringify(polyline)},{color:'#1A73E8',weight:3}).addTo(map);`
-      : boarding && alighting
-      ? `L.polyline([[${boarding.latitude},${boarding.longitude}],[${alighting.latitude},${alighting.longitude}]],{color:'#1A73E8',weight:3,dashArray:'8,4'}).addTo(map);`
-      : '';
-
+  const allPts: [number, number][] = [
+    ...(polyline.length > 1 ? polyline : []),
+    ...(boarding ? [[boarding.latitude, boarding.longitude] as [number, number]] : []),
+    ...(alighting ? [[alighting.latitude, alighting.longitude] as [number, number]] : []),
+  ];
   const boundsJs =
-    polyline.length > 1
-      ? `map.fitBounds(${JSON.stringify(polyline)},{padding:[32,32]});`
+    allPts.length > 1
+      ? `map.fitBounds(${JSON.stringify(allPts)},{padding:[40,40]});`
       : `map.setView([${center[0]},${center[1]}],13);`;
 
   return `<!DOCTYPE html>
@@ -70,9 +103,11 @@ var greenIcon=L.icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet
 var redIcon=L.icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34]});
 
 ${markersJs}
+${intermediateJs}
+${walkLinesJs}
+${polylineJs}
 ${boardingJs}
 ${alightingJs}
-${polylineJs}
 ${boundsJs}
 </script>
 </body>
@@ -107,8 +142,9 @@ export function RouteMapScreen({ navigation, route: navRoute }: Props) {
         boarding: boarding ? { latitude: boarding.latitude, longitude: boarding.longitude, name: boarding.name } : null,
         alighting: alighting ? { latitude: alighting.latitude, longitude: alighting.longitude, name: alighting.name } : null,
         center,
+        steps: route.steps,
       }),
-    [lineStops, boarding, alighting]
+    [lineStops, boarding, alighting, route.steps]
   );
 
   return (

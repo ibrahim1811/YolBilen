@@ -21,6 +21,18 @@ export interface RouteStop {
   longitude: number;
 }
 
+export interface RouteStep {
+  type: 'walk' | 'transit';
+  durationMins: number;
+  toStopName?: string;
+  distanceMeters?: number;
+  lineNumber?: string;
+  boardStop?: { name: string; latitude: number; longitude: number };
+  alightStop?: { name: string; latitude: number; longitude: number };
+  intermediateStops?: Array<{ name: string; latitude: number; longitude: number }>;
+  departureTime?: string;
+}
+
 export interface Route {
   id: string;
   lineNumber: string;
@@ -32,6 +44,7 @@ export interface Route {
   sunAnalysis?: SunAnalysis;
   boardingStop?: RouteStop;
   alightingStop?: RouteStop;
+  steps?: RouteStep[];
 }
 
 export interface Transfer {

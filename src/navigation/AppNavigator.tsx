@@ -8,6 +8,8 @@ import { RouteResultScreen } from '../screens/RouteResultScreen';
 import { LineDetailScreen } from '../screens/LineDetailScreen';
 import { StopDetailScreen } from '../screens/StopDetailScreen';
 import { RouteMapScreen } from '../screens/RouteMapScreen';
+import { NearbyStopsScreen } from '../screens/NearbyStopsScreen';
+import { JourneyHistoryScreen } from '../screens/JourneyHistoryScreen';
 import { TabNavigator } from './TabNavigator';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
@@ -52,6 +54,16 @@ export function AppNavigator() {
               name="RouteMap"
               component={RouteMapScreen}
               options={{ animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
+              name="NearbyStops"
+              component={NearbyStopsScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="JourneyHistory"
+              component={JourneyHistoryScreen}
+              options={{ animation: 'slide_from_right' }}
             />
           </>
         )}

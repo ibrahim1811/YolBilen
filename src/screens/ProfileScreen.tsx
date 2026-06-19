@@ -8,9 +8,13 @@ import { useAppStore } from '../store/useAppStore';
 import { NotificationSettings } from '../components/profile/NotificationSettings';
 import { getUserPoints } from '../services/firebase/firestore';
 import { computeBadges, nextBadge } from '../services/gamification/badgeService';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../types';
 
 export function ProfileScreen() {
   const theme = useTheme();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, setUser, isDarkMode, toggleDarkMode } = useAppStore();
   const [points, setPoints] = React.useState(user?.contributionPoints ?? 0);
 
@@ -169,6 +173,23 @@ export function ProfileScreen() {
               />
             )}
             onPress={() => {}}
+          />
+          <Divider />
+          <List.Item
+            title="Geçmiş Yolculuklar"
+            titleStyle={{ color: theme.colors.onSurface }}
+            left={() => (
+              <MaterialCommunityIcons
+                name="history"
+                size={22}
+                color={theme.colors.onSurfaceVariant}
+                style={{ marginLeft: 8, alignSelf: 'center' }}
+              />
+            )}
+            right={() => (
+              <MaterialCommunityIcons name="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
+            )}
+            onPress={() => navigation.navigate('JourneyHistory')}
           />
         </Surface>
 

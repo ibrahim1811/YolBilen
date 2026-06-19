@@ -50,7 +50,11 @@ function ThemedApp() {
           });
         }
       } else {
-        setUser(null);
+        // Non-guest token expired — force re-login so Firestore writes work.
+        const existing = useAppStore.getState().user;
+        if (existing && !existing.isGuest) {
+          setUser(null);
+        }
       }
       setAuthReady(true);
     });

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Text, Button, Surface, useTheme, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -12,9 +12,10 @@ import { WeatherBanner } from '../components/home/WeatherBanner';
 import { useAppStore } from '../store/useAppStore';
 import { useFavorites } from '../hooks/useFavorites';
 import { useWeather } from '../hooks/useWeather';
+import { getUserJourneys, detectRoutine } from '../services/firebase/journeyService';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import type { RootStackParamList, FavoriteType } from '../types';
+import type { RootStackParamList, FavoriteType, JourneyRecord } from '../types';
 
 export function HomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -26,6 +27,16 @@ export function HomeScreen() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [locationPicker, setLocationPicker] = useState<'origin' | 'destination' | null>(null);
   const weather = useWeather();
+  const [routine, setRoutine] = useState<JourneyRecord | null>(null);
+  const h = new Date().getHours();
+  const isNight = h >= 22 || h < 6;
+
+  useEffect(() => {
+    if (!user || user.isGuest) return;
+    getUserJourneys(user.uid, 50)
+      .then(journeys => setRoutine(detectRoutine(journeys)))
+      .catch(() => {});
+  }, [user?.uid]);
 
   const disabledTypes = favoriteLocations
     .filter((l) => l.type !== 'custom')
@@ -138,10 +149,10 @@ export function HomeScreen() {
                 <FavoriteLineCard
                   key={line.id}
                   line={line}
-                  onPress={() => {
-                    setOrigin(origin ?? { name: 'Mevcut Konum', latitude: 38.419, longitude: 27.129 });
-                    setDestination({ name: line.lineName, latitude: 38.419, longitude: 27.129 });
-                  }}
+                  onPress={() => navigation.navigate('LineDetail', {
+                    lineNumber: line.lineNumber,
+                    lineName: line.lineName,
+                  })}
                   onRemove={() => removeLine(line.id)}
                 />
               ))}
@@ -151,6 +162,58 @@ export function HomeScreen() {
 
         {/* Hava Durumu */}
         <WeatherBanner data={weather.data} loading={weather.loading} error={weather.error} />
+
+        {/* Yakındaki Duraklar butonu */}
+        <TouchableOpacity onPress={() => navigation.navigate('NearbyStops')} activeOpacity={0.85}>
+          <Surface style={[styles.nearbyCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
+            <View style={[styles.nearbyIcon, { backgroundColor: theme.colors.primaryContainer }]}>
+              <MaterialCommunityIcons name="bus-stop" size={22} color={theme.colors.primary} />
+            </View>
+            <View style={styles.nearbyText}>
+              <Text style={[styles.nearbyTitle, { color: theme.colors.onSurface }]}>Yakındaki Duraklar</Text>
+              <Text style={[styles.nearbySub, { color: theme.colors.onSurfaceVariant }]}>GPS ile en yakın durakları bul</Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.onSurfaceVariant} />
+          </Surface>
+        </TouchableOpacity>
+
+        {/* Akıllı Rutin kartı */}
+        {routine && (
+          <Surface style={[styles.routineCard, { backgroundColor: theme.colors.secondaryContainer }]} elevation={0}>
+            <MaterialCommunityIcons name="brain" size={22} color={theme.colors.secondary} />
+            <View style={styles.routineText}>
+              <Text style={[styles.routineTitle, { color: theme.colors.onSecondaryContainer }]}>
+                Sabah rutinin: Hat {routine.lineNumber}
+              </Text>
+              <Text style={[styles.routineSub, { color: theme.colors.onSecondaryContainer }]}>
+                {routine.originName} → {routine.destinationName}
+              </Text>
+            </View>
+            <Button
+              compact
+              mode="contained"
+              onPress={() => {
+                useAppStore.getState().setOrigin({ name: routine!.originName, latitude: 0, longitude: 0 });
+                navigation.navigate('RouteSearch');
+              }}
+            >
+              Başlat
+            </Button>
+          </Surface>
+        )}
+
+        {/* Gece güvenlik modu banner */}
+        {isNight && (
+          <Surface style={[styles.infoCard, { backgroundColor: '#1A1A2E' }]} elevation={0}>
+            <MaterialCommunityIcons name="shield-moon" size={24} color="#7986CB" />
+            <View style={styles.infoText}>
+              <Text style={[styles.infoTitle, { color: '#7986CB' }]}>Gece Güvenlik Modu Aktif</Text>
+              <Text style={[styles.infoDesc, { color: 'rgba(255,255,255,0.6)' }]}>
+                Rotalar az aktarmalı ve kalabalık araç öncelikli sıralanıyor.
+              </Text>
+            </View>
+          </Surface>
+        )}
 
         {/* Sun Info Banner */}
         <Surface style={[styles.infoCard, { backgroundColor: theme.colors.primaryContainer }]} elevation={0}>
@@ -217,4 +280,13 @@ const styles = StyleSheet.create({
   infoText: { flex: 1, gap: 4 },
   infoTitle: { fontSize: 15, fontWeight: '600' },
   infoDesc: { fontSize: 13, lineHeight: 20 },
+  nearbyCard: { borderRadius: 16, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  nearbyIcon: { width: 44, height: 44, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  nearbyText: { flex: 1, gap: 2 },
+  nearbyTitle: { fontSize: 15, fontWeight: '600' },
+  nearbySub: { fontSize: 12 },
+  routineCard: { borderRadius: 16, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  routineText: { flex: 1, gap: 2 },
+  routineTitle: { fontSize: 14, fontWeight: '700' },
+  routineSub: { fontSize: 12 },
 });

@@ -46,21 +46,23 @@ export async function getUserPoints(userId: string): Promise<number> {
   return (snap.data().contributionPoints as number) ?? 0;
 }
 
-export async function getLineFeedbacks(lineNumber: string): Promise<Feedback[]> {
-  const q = query(
-    collection(db, 'feedbacks'),
-    where('lineNumber', '==', lineNumber),
-    orderBy('timestamp', 'desc')
-  );
-  const snap = await getDocs(q);
-  return snap.docs.map(d => {
+function mapFeedbacks(docs: any[]): Feedback[] {
+  return docs.map(d => {
     const data = d.data();
-    return {
-      id: d.id,
-      ...data,
-      timestamp: (data.timestamp as Timestamp).toDate(),
-    } as Feedback;
+    return { id: d.id, ...data, timestamp: (data.timestamp as Timestamp).toDate() } as Feedback;
   });
+}
+
+export async function getLineFeedbacks(lineNumber: string): Promise<Feedback[]> {
+  const col = collection(db, 'feedbacks');
+  try {
+    const snap = await getDocs(query(col, where('lineNumber', '==', lineNumber), orderBy('timestamp', 'desc'), limit(20)));
+    return mapFeedbacks(snap.docs);
+  } catch {
+    // Composite index missing — fall back to unordered query
+    const snap = await getDocs(query(col, where('lineNumber', '==', lineNumber), limit(20)));
+    return mapFeedbacks(snap.docs).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
 }
 
 export async function getRecentFeedbacks(limitCount = 10): Promise<Feedback[]> {

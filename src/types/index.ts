@@ -154,6 +154,32 @@ export interface Badge {
   earned: boolean;
 }
 
+export interface JourneyRecord {
+  id?: string;
+  userId: string;
+  lineNumber: string;
+  lineName: string;
+  originName: string;
+  destinationName: string;
+  durationMins: number;
+  distanceKm: number;
+  timestamp: Date;
+  dayOfWeek: number;
+  hourOfDay: number;
+}
+
+export interface CommunityAlert {
+  id?: string;
+  userId: string;
+  lineNumber: string;
+  type: 'ac_broken' | 'traffic' | 'crowded' | 'breakdown' | 'delay';
+  createdAt: Date;
+  expiresAt: Date;
+  upvotes: number;
+}
+
+export type RouteFilterMode = 'fastest' | 'comfortable' | 'cool' | 'least_transfers' | 'night_safe';
+
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
@@ -164,6 +190,8 @@ export type RootStackParamList = {
   LineDetail: { lineNumber: string; lineName: string };
   StopDetail: { stop: Stop };
   RouteMap: { route: Route };
+  NearbyStops: undefined;
+  JourneyHistory: undefined;
 };
 
 export interface NotificationPrefs {

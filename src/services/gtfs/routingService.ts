@@ -1,4 +1,4 @@
-import type { Route, Location, CrowdLevel, RouteStop, RouteStep } from '../../types';
+import type { Route, Location, CrowdLevel, RouteStop, RouteStep, RouteFilterMode } from '../../types';
 import { IZMIR_ROUTES } from '../../data/izmir-routes';
 import { getStops, getStopRoutes } from '../../data/gtfsData';
 import { analyzeSunExposure } from '../sun/sunAnalysis';
@@ -206,5 +206,41 @@ export function findRoutes(origin: Location, destination: Location): Route[] {
     });
   }
 
+  const h = new Date().getHours();
+  const isNight = h >= 22 || h < 6;
+  if (isNight) {
+    const crowdW: Record<CrowdLevel, number> = { very_high: 3, high: 2, medium: 1, low: 0 };
+    results.sort((a, b) => {
+      const td = a.transfers.length - b.transfers.length;
+      return td !== 0 ? td : crowdW[b.crowdLevel] - crowdW[a.crowdLevel];
+    });
+  }
+
   return results;
+}
+
+export function sortRoutes(routes: Route[], mode: RouteFilterMode, comfortMap?: Map<string, number>): Route[] {
+  const arr = [...routes];
+  switch (mode) {
+    case 'fastest':
+      return arr.sort((a, b) => a.estimatedDuration - b.estimatedDuration);
+    case 'least_transfers':
+      return arr.sort((a, b) => a.transfers.length - b.transfers.length);
+    case 'comfortable':
+    case 'cool':
+      return arr.sort((a, b) => {
+        const sa = comfortMap?.get(a.lineNumber) ?? 0;
+        const sb = comfortMap?.get(b.lineNumber) ?? 0;
+        return sb - sa;
+      });
+    case 'night_safe': {
+      const crowdW: Record<CrowdLevel, number> = { very_high: 3, high: 2, medium: 1, low: 0 };
+      return arr.sort((a, b) => {
+        const td = a.transfers.length - b.transfers.length;
+        return td !== 0 ? td : crowdW[b.crowdLevel] - crowdW[a.crowdLevel];
+      });
+    }
+    default:
+      return arr;
+  }
 }

@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
-import { Text, Surface, useTheme, Button, Snackbar, TouchableRipple, Divider } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
+import { Text, Surface, useTheme, Button, Snackbar, TouchableRipple, Divider, Chip } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FeedbackChipGroup } from '../components/community/FeedbackChipGroup';
 import { LineSelectorModal } from '../components/community/LineSelector';
 import { RecentFeedbackCard } from '../components/community/RecentFeedbackCard';
 import { submitFeedback, getRecentFeedbacks } from '../services/firebase/firestore';
+import { postAlert, getActiveAlerts, upvoteAlert, ALERT_LABELS, ALERT_ICONS, ALERT_EXPIRY_MINS } from '../services/firebase/alertService';
 import { useAppStore } from '../store/useAppStore';
-import type { Feedback } from '../types';
+import type { User, Feedback, CommunityAlert } from '../types';
 
 type ComfortOption = Feedback['comfort'];
 type AcOption = Feedback['ac'];
@@ -39,6 +40,7 @@ const COMFORT_OPTIONS = [
 export function CommunityScreen() {
   const theme = useTheme();
   const user = useAppStore((s) => s.user);
+  const setUser = useAppStore((s) => s.setUser);
 
   const [showLineModal, setShowLineModal] = useState(false);
   const [selectedLine, setSelectedLine] = useState<{ number: string; name: string } | null>(null);
@@ -50,11 +52,15 @@ export function CommunityScreen() {
   const [snackbar, setSnackbar] = useState('');
   const [recentFeedbacks, setRecentFeedbacks] = useState<Feedback[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [alerts, setAlerts] = useState<CommunityAlert[]>([]);
+  const [alertType, setAlertType] = useState<CommunityAlert['type']>('ac_broken');
+  const [showAlertForm, setShowAlertForm] = useState(false);
 
   const loadRecent = useCallback(async () => {
     try {
-      const data = await getRecentFeedbacks(8);
-      setRecentFeedbacks(data);
+      const [feedbacks, activeAlerts] = await Promise.all([getRecentFeedbacks(8), getActiveAlerts()]);
+      setRecentFeedbacks(feedbacks);
+      setAlerts(activeAlerts);
     } catch {}
   }, []);
 
@@ -80,7 +86,8 @@ export function CommunityScreen() {
         crowd,
         timestamp: new Date(),
       });
-      setSnackbar(`Teşekkürler! +10 puan kazandınız.`);
+      setSnackbar('Teşekkürler! +10 puan kazandınız.');
+      if (user) setUser({ ...user, contributionPoints: (user.contributionPoints ?? 0) + 10 });
       setSelectedLine(null);
       loadRecent();
     } catch {
@@ -197,6 +204,86 @@ export function CommunityScreen() {
           </Surface>
         )}
 
+        {/* Community Alerts */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Topluluk Uyarıları</Text>
+            {user && !user.isGuest && selectedLine && (
+              <TouchableOpacity onPress={() => setShowAlertForm(v => !v)}>
+                <MaterialCommunityIcons name={showAlertForm ? 'minus-circle-outline' : 'plus-circle-outline'} size={22} color={theme.colors.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {showAlertForm && selectedLine && (
+            <Surface style={[styles.alertForm, { backgroundColor: theme.colors.surface }]} elevation={1}>
+              <Text style={[styles.alertFormTitle, { color: theme.colors.onSurface }]}>
+                Hat {selectedLine.number} için uyarı gönder
+              </Text>
+              <View style={styles.alertTypeRow}>
+                {(Object.keys(ALERT_LABELS) as CommunityAlert['type'][]).map(t => (
+                  <Chip
+                    key={t}
+                    selected={alertType === t}
+                    onPress={() => setAlertType(t)}
+                    compact
+                    icon={ALERT_ICONS[t]}
+                    style={styles.alertChip}
+                  >
+                    {ALERT_LABELS[t]}
+                  </Chip>
+                ))}
+              </View>
+              <Button
+                mode="contained"
+                compact
+                onPress={async () => {
+                  if (!user || !selectedLine) return;
+                  const now = new Date();
+                  const expiresAt = new Date(now.getTime() + ALERT_EXPIRY_MINS[alertType] * 60000);
+                  try {
+                    await postAlert({ userId: user.uid, lineNumber: selectedLine.number, type: alertType, createdAt: now, expiresAt });
+                    setSnackbar('Uyarı gönderildi!');
+                    setShowAlertForm(false);
+                    loadRecent();
+                  } catch { setSnackbar('Hata oluştu.'); }
+                }}
+              >
+                Uyarı Gönder
+              </Button>
+            </Surface>
+          )}
+
+          {alerts.length === 0 ? (
+            <Surface style={[styles.emptyCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
+              <MaterialCommunityIcons name="shield-check" size={28} color={theme.colors.onSurfaceVariant} />
+              <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>Aktif uyarı yok</Text>
+            </Surface>
+          ) : (
+            <View style={styles.feedbackList}>
+              {alerts.map(a => (
+                <Surface key={a.id} style={[styles.alertCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
+                  <MaterialCommunityIcons name={ALERT_ICONS[a.type] as any} size={20} color="#D93025" />
+                  <View style={styles.alertInfo}>
+                    <Text style={[styles.alertTitle, { color: theme.colors.onSurface }]}>
+                      Hat {a.lineNumber} — {ALERT_LABELS[a.type]}
+                    </Text>
+                    <Text style={[styles.alertExpiry, { color: theme.colors.onSurfaceVariant }]}>
+                      {Math.max(0, Math.round((a.expiresAt.getTime() - Date.now()) / 60000))} dk içinde sona erer
+                    </Text>
+                  </View>
+                  <TouchableOpacity onPress={async () => { await upvoteAlert(a.id!); loadRecent(); }}>
+                    <View style={styles.upvoteBtn}>
+                      <MaterialCommunityIcons name="thumb-up-outline" size={16} color={theme.colors.primary} />
+                      <Text style={[styles.upvoteCount, { color: theme.colors.primary }]}>{a.upvotes}</Text>
+                    </View>
+                  </TouchableOpacity>
+                </Surface>
+              ))}
+            </View>
+          )}
+        </View>
+
         {/* Recent Feedbacks */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -273,4 +360,14 @@ const styles = StyleSheet.create({
   emptyCard: { borderRadius: 14, padding: 24, alignItems: 'center', gap: 10 },
   emptyText: { fontSize: 14, textAlign: 'center' },
   feedbackList: { gap: 8 },
+  alertForm: { borderRadius: 14, padding: 16, gap: 12 },
+  alertFormTitle: { fontSize: 14, fontWeight: '600' },
+  alertTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  alertChip: { marginBottom: 2 },
+  alertCard: { borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  alertInfo: { flex: 1 },
+  alertTitle: { fontSize: 14, fontWeight: '600' },
+  alertExpiry: { fontSize: 12 },
+  upvoteBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, padding: 6 },
+  upvoteCount: { fontSize: 13, fontWeight: '600' },
 });

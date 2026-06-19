@@ -6,6 +6,11 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1A73E8"
+    },
     "android": {
       "package": "com.yolbilen.app",
       "googleServicesFile": "./google-services.json",

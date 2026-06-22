@@ -16,17 +16,17 @@ export function AiSummaryCard({ route, weather, comfort }: Props) {
   const theme = useTheme();
   const [summary, setSummary] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
-    setError(false);
+    setError(null);
     setSummary(null);
     try {
       const text = await generateTravelSummary(route, weather, comfort);
       setSummary(text);
-    } catch {
-      setError(true);
+    } catch (e: any) {
+      setError(e?.message ?? 'Özet alınamadı');
     } finally {
       setLoading(false);
     }

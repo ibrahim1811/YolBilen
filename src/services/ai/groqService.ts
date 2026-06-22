@@ -78,5 +78,7 @@ export async function generateTravelSummary(
   }
 
   const data = await res.json();
-  return data.choices?.[0]?.message?.content?.trim() ?? '';
+  const text = (data.choices?.[0]?.message?.content ?? '').trim();
+  if (!text) throw new Error('Groq boş yanıt döndürdü');
+  return text;
 }

@@ -4,7 +4,6 @@ import {
   getLinesNearOrigin,
   getOrderedStopsForDir,
   getRouteName,
-  isRingRoute,
 } from '../../data/gtfsData';
 import { analyzeSunExposureAlongRoute } from '../sun/sunAnalysis';
 import { getNextArrivalMins } from '../firebase/scheduleService';

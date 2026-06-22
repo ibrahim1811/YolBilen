@@ -18,7 +18,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'StopDetail'>;
 export function StopDetailScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { stop } = route.params;
+  const { stopId, stopName, latitude, longitude, lines } = route.params;
 
   const { favoriteLocations, addLocation, removeLocation } = useFavorites();
   const [arrivals, setArrivals] = useState<StopArrival[]>([]);
@@ -26,12 +26,12 @@ export function StopDetailScreen({ navigation, route }: Props) {
   const [snackbar, setSnackbar] = useState('');
   const [countdown, setCountdown] = useState(30);
 
-  const isFavorited = favoriteLocations.some((f) => f.location.name === stop.name);
+  const isFavorited = favoriteLocations.some((f) => f.location.name === stopName);
 
   const loadArrivals = useCallback(async () => {
-    const iztekId = nearestIztekStopId(stop.latitude, stop.longitude);
+    const iztekId = nearestIztekStopId(latitude, longitude);
     if (!iztekId) {
-      const fallback: StopArrival[] = (stop.lines ?? [])
+      const fallback: StopArrival[] = (lines ?? [])
         .map(lineNum => {
           const lineName = getRouteName(lineNum) ?? `Hat ${lineNum}`;
           const mins = getNextArrivalMins(lineNum);
@@ -57,7 +57,7 @@ export function StopDetailScreen({ navigation, route }: Props) {
       };
     });
     setArrivals(mapped);
-  }, [stop.latitude, stop.longitude, stop.lines]);
+  }, [latitude, longitude, lines]);
 
   useEffect(() => {
     loadArrivals();
@@ -79,16 +79,16 @@ export function StopDetailScreen({ navigation, route }: Props) {
 
   async function handleToggleFavorite() {
     if (isFavorited) {
-      const fav = favoriteLocations.find((f) => f.location.name === stop.name);
+      const fav = favoriteLocations.find((f) => f.location.name === stopName);
       if (fav) {
         await removeLocation(fav.id);
         setSnackbar(t('stop_remove_favorite'));
       }
     } else {
-      await addLocation('custom', stop.name, {
-        name: stop.name,
-        latitude: stop.latitude,
-        longitude: stop.longitude,
+      await addLocation('custom', stopName, {
+        name: stopName,
+        latitude,
+        longitude,
       });
       setSnackbar(t('stop_favorited'));
     }
@@ -116,9 +116,9 @@ export function StopDetailScreen({ navigation, route }: Props) {
           <View style={[styles.heroIcon, { backgroundColor: theme.colors.primaryContainer }]}>
             <MaterialCommunityIcons name="bus-stop" size={36} color={theme.colors.primary} />
           </View>
-          <Text style={[styles.stopName, { color: theme.colors.onSurface }]}>{stop.name}</Text>
+          <Text style={[styles.stopName, { color: theme.colors.onSurface }]}>{stopName}</Text>
           <Text style={[styles.stopCoords, { color: theme.colors.onSurfaceVariant }]}>
-            {stop.latitude.toFixed(4)}, {stop.longitude.toFixed(4)}
+            {latitude.toFixed(4)}, {longitude.toFixed(4)}
           </Text>
 
           <Button
@@ -138,7 +138,7 @@ export function StopDetailScreen({ navigation, route }: Props) {
             {t('stop_passing_lines')}
           </Text>
           <View style={styles.lineChips}>
-            {stop.lines.map((lineNum) => (
+            {(lines ?? []).map((lineNum) => (
               <Chip
                 key={lineNum}
                 onPress={() => nav.navigate('LineDetail', {

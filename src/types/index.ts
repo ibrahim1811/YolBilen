@@ -118,6 +118,8 @@ export interface Feedback {
   temperature: 'cool' | 'normal' | 'hot';
   crowd: 'seated' | 'standing' | 'very_crowded';
   timestamp: Date;
+  busId?: string;
+  plateNumber?: string;
 }
 
 export interface WeatherData {
@@ -188,10 +190,12 @@ export type RootStackParamList = {
   RouteResults: { origin: Location; destination: Location };
   SunAnalysis: { route: Route };
   LineDetail: { lineNumber: string; lineName: string };
-  StopDetail: { stop: Stop };
+  StopDetail: { stopId: string; stopName: string; latitude: number; longitude: number; lines?: string[] };
   RouteMap: { route: Route };
+  JourneyNavigation: { route: Route };
   NearbyStops: undefined;
   JourneyHistory: undefined;
+  AdminPanel: undefined;
 };
 
 export interface NotificationPrefs {

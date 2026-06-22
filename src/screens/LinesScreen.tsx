@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
-import { Text, Surface, useTheme, Searchbar, Chip, IconButton } from 'react-native-paper';
+import React, { useMemo } from 'react';
+import { View, StyleSheet, SectionList, TouchableOpacity } from 'react-native';
+import { Text, Surface, useTheme, Searchbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFavorites } from '../hooks/useFavorites';
@@ -8,110 +8,139 @@ import { useAppStore } from '../store/useAppStore';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
-import { getAllLines } from '../data/gtfsData';
+import { getAllLines, getStops } from '../data/gtfsData';
+import type { IzmirStop } from '../data/gtfsData';
 
-const typeConfig: Record<string, { icon: string; color: string; label: string }> = {
-  bus: { icon: 'bus', color: '#1A73E8', label: 'Otobüs' },
-};
+type LineItem = { lineNum: string; name: string };
+type SectionItem = LineItem | IzmirStop;
+type Section = { title: string; data: SectionItem[]; type: 'line' | 'stop' };
+
+type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export function LinesScreen() {
   const theme = useTheme();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation = useNavigation<Nav>();
   const user = useAppStore((s) => s.user);
   const { isLineFavorited, addLine, removeLine, favoriteLines } = useFavorites();
   const [search, setSearch] = React.useState('');
-  const [filter, setFilter] = React.useState<string | null>(null);
 
-  const allLines = React.useMemo(() => getAllLines().map(r => ({
-    number: r.lineNum,
-    name: r.name,
-    type: 'bus' as const,
-    crowdAvg: 'medium' as const,
-  })), []);
+  const allLines = useMemo(() => getAllLines(), []);
+  const allStops = useMemo(() => getStops(), []);
 
-  function handleToggleFavorite(lineNumber: string, lineName: string) {
-    const existing = favoriteLines.find((l) => l.lineNumber === lineNumber);
-    if (existing) {
-      removeLine(existing.id);
-    } else {
-      addLine(lineNumber, lineName);
-    }
+  const lowerSearch = search.toLowerCase();
+
+  const filteredLines = useMemo(
+    () =>
+      lowerSearch
+        ? allLines.filter(
+            l =>
+              l.lineNum.toLowerCase().includes(lowerSearch) ||
+              l.name.toLowerCase().includes(lowerSearch)
+          )
+        : allLines,
+    [allLines, lowerSearch]
+  );
+
+  const filteredStops = useMemo(
+    () =>
+      lowerSearch.length >= 2
+        ? allStops
+            .filter(s => s.name.toLowerCase().includes(lowerSearch))
+            .slice(0, 50)
+        : [],
+    [allStops, lowerSearch]
+  );
+
+  const sections = useMemo((): Section[] => {
+    const s: Section[] = [];
+    if (filteredLines.length > 0) s.push({ title: 'HATLAR', data: filteredLines, type: 'line' });
+    if (filteredStops.length > 0) s.push({ title: 'DURAKLAR', data: filteredStops, type: 'stop' });
+    return s;
+  }, [filteredLines, filteredStops]);
+
+  function handleToggleFavorite(lineNum: string, lineName: string) {
+    const existing = favoriteLines.find(l => l.lineNumber === lineNum);
+    if (existing) removeLine(existing.id);
+    else addLine(lineNum, lineName);
   }
 
-  const filtered = allLines.filter((l) => {
-    const matchSearch =
-      l.number.toLowerCase().includes(search.toLowerCase()) ||
-      l.name.toLowerCase().includes(search.toLowerCase());
-    const matchFilter = filter === null || l.type === filter;
-    return matchSearch && matchFilter;
-  });
+  function renderLine(item: { lineNum: string; name: string }) {
+    const isFav = isLineFavorited(item.lineNum);
+    return (
+      <TouchableOpacity onPress={() => navigation.navigate('LineDetail', { lineNumber: item.lineNum, lineName: item.name })}>
+        <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
+          <View style={[styles.badge, { backgroundColor: theme.colors.primaryContainer }]}>
+            <Text style={[styles.badgeText, { color: theme.colors.primary }]}>{item.lineNum}</Text>
+          </View>
+          <Text style={[styles.lineName, { color: theme.colors.onSurface }]} numberOfLines={1}>
+            {item.name}
+          </Text>
+          {user && !user.isGuest && (
+            <TouchableOpacity onPress={() => handleToggleFavorite(item.lineNum, item.name)}>
+              <MaterialCommunityIcons
+                name={isFav ? 'star' : 'star-outline'}
+                size={20}
+                color={isFav ? '#FBBC04' : theme.colors.onSurfaceVariant}
+              />
+            </TouchableOpacity>
+          )}
+        </Surface>
+      </TouchableOpacity>
+    );
+  }
+
+  function renderStop(item: IzmirStop) {
+    return (
+      <TouchableOpacity
+        onPress={() =>
+          navigation.navigate('StopDetail', {
+            stopId: item.id,
+            stopName: item.name,
+            latitude: item.lat,
+            longitude: item.lon,
+          })
+        }
+      >
+        <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
+          <MaterialCommunityIcons name="bus-stop" size={20} color={theme.colors.primary} />
+          <Text style={[styles.lineName, { color: theme.colors.onSurface }]} numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text style={[styles.stopId, { color: theme.colors.onSurfaceVariant }]}>#{item.id}</Text>
+        </Surface>
+      </TouchableOpacity>
+    );
+  }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: theme.colors.onSurface }]}>Hatlar</Text>
+        <Text style={[styles.title, { color: theme.colors.onSurface }]}>Hatlar & Duraklar</Text>
         <Searchbar
-          placeholder="Hat ara..."
+          placeholder="Hat veya durak ara..."
           value={search}
           onChangeText={setSearch}
           style={[styles.searchbar, { backgroundColor: theme.colors.surfaceVariant }]}
           inputStyle={{ fontSize: 14 }}
           elevation={0}
         />
-        <View style={styles.filters}>
-          {(Object.keys(typeConfig) as string[]).map((type) => (
-            <Chip
-              key={type}
-              selected={filter === type}
-              onPress={() => setFilter(filter === type ? null : type)}
-              icon={typeConfig[type].icon}
-              style={filter === type ? { backgroundColor: theme.colors.primaryContainer } : undefined}
-              textStyle={{ fontSize: 12 }}
-            >
-              {typeConfig[type].label}
-            </Chip>
-          ))}
-        </View>
       </View>
-
-      <FlatList
-        data={filtered}
-        keyExtractor={(item) => item.number}
+      <SectionList<SectionItem, Section>
+        sections={sections}
+        keyExtractor={(item, i) => ('lineNum' in item ? `l-${(item as LineItem).lineNum}` : `s-${(item as IzmirStop).id}-${i}`)}
+        renderSectionHeader={({ section }) => (
+          <Text style={[styles.sectionHeader, { color: theme.colors.onSurfaceVariant, backgroundColor: theme.colors.background }]}>
+            {section.title}
+          </Text>
+        )}
+        renderItem={({ item, section }) =>
+          section.type === 'line'
+            ? renderLine(item as LineItem)
+            : renderStop(item as IzmirStop)
+        }
         contentContainerStyle={styles.list}
-        renderItem={({ item }) => {
-          const cfg = typeConfig[item.type];
-          return (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              onPress={() => navigation.navigate('LineDetail', { lineNumber: item.number, lineName: item.name })}
-            >
-            <Surface
-              style={[styles.lineCard, { backgroundColor: theme.colors.surface }]}
-              elevation={1}
-            >
-              <View style={[styles.lineIcon, { backgroundColor: cfg.color + '20' }]}>
-                <MaterialCommunityIcons name={cfg.icon as any} size={22} color={cfg.color} />
-              </View>
-              <View style={styles.lineInfo}>
-                <Text style={[styles.lineNumber, { color: theme.colors.onSurface }]}>
-                  {item.number}
-                </Text>
-                <Text style={[styles.lineName, { color: theme.colors.onSurfaceVariant }]}>
-                  {item.name}
-                </Text>
-              </View>
-              {!user?.isGuest && (
-                <IconButton
-                  icon={isLineFavorited(item.number) ? 'star' : 'star-outline'}
-                  iconColor={isLineFavorited(item.number) ? '#FBBC04' : theme.colors.onSurfaceVariant}
-                  size={20}
-                  onPress={() => handleToggleFavorite(item.number, item.name)}
-                />
-              )}
-            </Surface>
-            </TouchableOpacity>
-          );
-        }}
+        showsVerticalScrollIndicator={false}
+        stickySectionHeadersEnabled
       />
     </SafeAreaView>
   );
@@ -119,28 +148,21 @@ export function LinesScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingTop: 16, gap: 12 },
-  title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.5 },
+  header: { padding: 16, gap: 12 },
+  title: { fontSize: 24, fontWeight: '700' },
   searchbar: { borderRadius: 12 },
-  filters: { flexDirection: 'row', gap: 8, flexWrap: 'wrap', paddingBottom: 4 },
-  list: { padding: 20, paddingTop: 8, gap: 10 },
-  lineCard: {
-    borderRadius: 14,
-    padding: 14,
+  list: { paddingHorizontal: 16, paddingBottom: 24 },
+  sectionHeader: { fontSize: 11, fontWeight: '700', letterSpacing: 1, paddingVertical: 8 },
+  card: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-  },
-  lineIcon: {
-    width: 44,
-    height: 44,
+    gap: 12,
+    padding: 12,
     borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
+    marginBottom: 8,
   },
-  lineInfo: { flex: 1, gap: 4 },
-  lineRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  lineNumber: { fontSize: 16, fontWeight: '700' },
-  typeChip: { height: 24 },
-  lineName: { fontSize: 13 },
+  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, minWidth: 44, alignItems: 'center' },
+  badgeText: { fontSize: 13, fontWeight: '700' },
+  lineName: { flex: 1, fontSize: 14 },
+  stopId: { fontSize: 12 },
 });

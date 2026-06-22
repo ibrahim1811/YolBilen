@@ -127,7 +127,11 @@ export function NearbyStopsScreen({ navigation }: Props) {
           renderItem={({ item }) => (
             <TouchableRipple
               onPress={() => navigation.navigate('StopDetail', {
-                stop: { id: item.id, name: item.name, latitude: item.lat, longitude: item.lon, lines: item.lines },
+                stopId: item.id,
+                stopName: item.name,
+                latitude: item.lat,
+                longitude: item.lon,
+                lines: item.lines,
               })}
               borderless
               style={styles.stopCardRipple}

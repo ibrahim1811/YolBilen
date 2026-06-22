@@ -9,7 +9,6 @@
     "@react-navigation/bottom-tabs": "^7.18.2",
     "@react-navigation/native": "^7.3.3",
     "@react-navigation/native-stack": "^7.17.5",
-    "@react-navigation/stack": "^7.10.5",
     "babel-preset-expo": "^56.0.15",
     "expo": "~56.0.12",
     "expo-asset": "^56.0.17",
@@ -22,7 +21,6 @@
     "react-native": "0.85.3",
     "react-native-gesture-handler": "^3.0.1",
     "react-native-paper": "^5.15.3",
-    "react-native-reanimated": "^4.4.1",
     "react-native-safe-area-context": "^5.8.0",
     "react-native-screens": "^4.25.2",
     "react-native-vector-icons": "^10.3.0",
@@ -42,8 +40,9 @@
     "start": "expo start",
     "android": "expo run:android",
     "web": "expo start --web",
-    "bundle:android": "npx react-native bundle --platform android --dev false --entry-file node_modules/expo/AppEntry.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res",
-    "build:android": "npm run bundle:android && cd android && gradlew assembleRelease"
+    "bundle:android": "npx expo export:embed --platform android --dev false --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res",
+    "build:android": "npm run bundle:android && cd android && gradlew assembleRelease",
+    "build:gtfs": "node scripts/build-gtfs.mjs"
   },
   "private": true
 }

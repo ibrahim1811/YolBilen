@@ -7,6 +7,8 @@ import { ComfortScoreCard } from '../components/lines/ComfortScoreCard';
 import { getLineComfortScore } from '../services/firebase/lineStats';
 import { getLineFeedbacks } from '../services/firebase/firestore';
 import { getLineScheduleFromFirestore, getScheduleForDay } from '../services/firebase/scheduleService';
+import { getOrderedStopsForDir } from '../data/gtfsData';
+import type { IzmirStop } from '../data/gtfsData';
 import { RecentFeedbackCard } from '../components/community/RecentFeedbackCard';
 import { useFavorites } from '../hooks/useFavorites';
 import { useAppStore } from '../store/useAppStore';
@@ -15,8 +17,48 @@ import type { RootStackParamList, ComfortScore, Feedback } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LineDetail'>;
 
+function minsToHHMM(mins: number): string {
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+}
+
 function isRingRoute(name: string) {
-  return name.toLowerCase().includes('ring') || name.toLowerCase().includes('halka');
+  const lower = name.toLowerCase();
+  return /\bring\s*hat\b/.test(lower) || /\bhalka\s+hat\b/.test(lower);
+}
+
+function norm(s: string) {
+  return s.toLowerCase().replace(/[İI]/g, 'i').replace(/[Şş]/g, 's').replace(/[Ğğ]/g, 'g')
+    .replace(/[Üü]/g, 'u').replace(/[Öö]/g, 'o').replace(/[Çç]/g, 'c').replace(/\s+/g, ' ').trim();
+}
+
+function orderedLineStops(lineNumber: string, fromStop: string, toStop: string): IzmirStop[] {
+  const dir0 = getOrderedStopsForDir(lineNumber, 0);
+  const dir1 = getOrderedStopsForDir(lineNumber, 1);
+  const seen0 = new Set(dir0.map(s => s.id));
+  const all = [...dir0, ...dir1.filter(s => !seen0.has(s.id))];
+  if (all.length === 0) return [];
+
+  const qFrom = norm(fromStop);
+  const qTo = norm(toStop);
+  const start = all.find(s => norm(s.name).includes(qFrom) || qFrom.includes(norm(s.name)));
+  const end = toStop ? all.find(s => norm(s.name).includes(qTo) || qTo.includes(norm(s.name))) : undefined;
+
+  const anchor = start ?? all[0];
+  const tail = end ?? all[all.length - 1];
+  const dx = tail.lon - anchor.lon;
+  const dy = tail.lat - anchor.lat;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return all;
+
+  const seen = new Set<string>();
+  return [...all]
+    .map(s => ({ s, t: ((s.lon - anchor.lon) * dx + (s.lat - anchor.lat) * dy) / len2 }))
+    .sort((a, b) => a.t - b.t)
+    .filter(({ s }) => {
+      const key = s.name.trim().toLowerCase();
+      return seen.has(key) ? false : (seen.add(key), true);
+    })
+    .map(x => x.s);
 }
 
 export function LineDetailScreen({ navigation, route }: Props) {
@@ -37,6 +79,7 @@ export function LineDetailScreen({ navigation, route }: Props) {
   const [serviceType, setServiceType] = useState<'weekday' | 'saturday' | 'sunday'>('weekday');
   const [rawSchedule, setRawSchedule] = useState<import('../services/firebase/scheduleService').LineSchedule>({});
   const [scheduleLoading, setScheduleLoading] = useState(true);
+  const lineStops = React.useMemo(() => orderedLineStops(lineNumber, fromStop, toStop), [lineNumber, fromStop, toStop]);
 
   useEffect(() => {
     setScheduleLoading(true);
@@ -115,6 +158,37 @@ export function LineDetailScreen({ navigation, route }: Props) {
           </View>
         </Surface>
 
+        {/* Durak Listesi */}
+        {lineStops.length > 0 && (
+          <Surface style={[styles.stopsCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
+              Duraklar ({lineStops.length})
+            </Text>
+            {lineStops.map((stop, i) => {
+              const isFirst = i === 0;
+              const isLast = i === lineStops.length - 1;
+              return (
+                <View key={stop.id} style={styles.stopRow}>
+                  <View style={styles.stopTimeline}>
+                    <View style={[
+                      styles.stopDot,
+                      { backgroundColor: isFirst || isLast ? theme.colors.primary : theme.colors.outline }
+                    ]} />
+                    {!isLast && <View style={[styles.stopLine, { backgroundColor: theme.colors.outlineVariant }]} />}
+                  </View>
+                  <Text style={[
+                    styles.stopRowName,
+                    { color: isFirst || isLast ? theme.colors.onSurface : theme.colors.onSurfaceVariant,
+                      fontWeight: isFirst || isLast ? '700' : '400' }
+                  ]}>
+                    {stop.name}
+                  </Text>
+                </View>
+              );
+            })}
+          </Surface>
+        )}
+
         {/* Sefer Saatleri */}
         <Surface style={[styles.scheduleCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
           <View style={styles.scheduleHeader}>
@@ -160,7 +234,7 @@ export function LineDetailScreen({ navigation, route }: Props) {
                   <View style={styles.timeGrid}>
                     {schedule.dir0.map(t => (
                       <View key={t} style={[styles.timeBadge, { backgroundColor: theme.colors.primaryContainer }]}>
-                        <Text style={[styles.timeText, { color: theme.colors.primary }]}>{t}</Text>
+                        <Text style={[styles.timeText, { color: theme.colors.primary }]}>{minsToHHMM(t)}</Text>
                       </View>
                     ))}
                   </View>
@@ -175,7 +249,7 @@ export function LineDetailScreen({ navigation, route }: Props) {
                   <View style={styles.timeGrid}>
                     {schedule.dir1.map(t => (
                       <View key={t} style={[styles.timeBadge, { backgroundColor: theme.colors.secondaryContainer }]}>
-                        <Text style={[styles.timeText, { color: theme.colors.secondary }]}>{t}</Text>
+                        <Text style={[styles.timeText, { color: theme.colors.secondary }]}>{minsToHHMM(t)}</Text>
                       </View>
                     ))}
                   </View>
@@ -231,6 +305,12 @@ const styles = StyleSheet.create({
   stopInfo: { gap: 2 },
   stopLabel: { fontSize: 11, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5 },
   stopName: { fontSize: 14, fontWeight: '600' },
+  stopsCard: { borderRadius: 16, padding: 16, gap: 0 },
+  stopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, minHeight: 28 },
+  stopTimeline: { alignItems: 'center', width: 12 },
+  stopDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
+  stopLine: { width: 2, flex: 1, minHeight: 18 },
+  stopRowName: { fontSize: 13, flex: 1, paddingVertical: 2 },
   scheduleCard: { borderRadius: 16, padding: 16, gap: 10 },
   scheduleHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   ringBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },

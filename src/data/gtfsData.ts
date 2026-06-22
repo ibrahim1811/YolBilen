@@ -5,21 +5,31 @@ export interface IzmirStop {
   lon: number;
 }
 
-type StopRoutes = Record<string, string[]>;
+interface StopRouteDir { lineNum: string; dir: 0 | 1; }
 
 let _stops: IzmirStop[] | null = null;
-let _stopRoutes: StopRoutes | null = null;
 let _stopIndex: Map<string, IzmirStop> | null = null;
-let _lineStopsIndex: Map<string, IzmirStop[]> | null = null;
+let _stopRouteDirs: Record<string, StopRouteDir[]> | null = null;
+let _routeStopSeqs: Record<string, string[]> | null = null;
+let _ringRoutes: Set<string> | null = null;
+let _shapes: Record<string, [number, number][]> | null = null;
+let _routeMeta: Record<string, { name: string }> | null = null;
 
-export function getStops(): IzmirStop[] {
-  if (!_stops) _stops = require('./izmir-stops.json') as IzmirStop[];
-  return _stops;
+function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
+  const R = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLon = ((b.lon - a.lon) * Math.PI) / 180;
+  const s =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((a.lat * Math.PI) / 180) *
+    Math.cos((b.lat * Math.PI) / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.asin(Math.sqrt(s));
 }
 
-export function getStopRoutes(): StopRoutes {
-  if (!_stopRoutes) _stopRoutes = require('./izmir-stop-routes.json') as StopRoutes;
-  return _stopRoutes;
+export function getStops(): IzmirStop[] {
+  if (!_stops) _stops = require('./gtfs/stops.json') as IzmirStop[];
+  return _stops;
 }
 
 export function getStopIndex(): Map<string, IzmirStop> {
@@ -30,17 +40,97 @@ export function getStopIndex(): Map<string, IzmirStop> {
   return _stopIndex;
 }
 
-export function getLineStopsIndex(): Map<string, IzmirStop[]> {
-  if (!_lineStopsIndex) {
-    _lineStopsIndex = new Map();
-    const sr = getStopRoutes();
-    for (const stop of getStops()) {
-      const lines = sr[stop.id] ?? [];
-      for (const line of lines) {
-        if (!_lineStopsIndex.has(line)) _lineStopsIndex.set(line, []);
-        _lineStopsIndex.get(line)!.push(stop);
-      }
+export function getStopRouteDirs(): Record<string, StopRouteDir[]> {
+  if (!_stopRouteDirs) _stopRouteDirs = require('./gtfs/stop-route-dirs.json');
+  return _stopRouteDirs!;
+}
+
+export function getRouteStopSeqs(): Record<string, string[]> {
+  if (!_routeStopSeqs) _routeStopSeqs = require('./gtfs/route-stop-seqs.json');
+  return _routeStopSeqs!;
+}
+
+export function isRingRoute(lineNum: string): boolean {
+  if (!_ringRoutes) _ringRoutes = new Set(require('./gtfs/ring-routes.json') as string[]);
+  return _ringRoutes.has(lineNum);
+}
+
+export function getRouteShape(lineNum: string, dir: 0 | 1): [number, number][] {
+  if (!_shapes) _shapes = require('./gtfs/shapes.json');
+  return _shapes![`${lineNum}_${dir}`] ?? [];
+}
+
+export function getRouteName(lineNum: string): string | undefined {
+  if (!_routeMeta) _routeMeta = require('./gtfs/route-meta.json');
+  return _routeMeta![lineNum]?.name;
+}
+
+export function getAllLines(): Array<{ lineNum: string; name: string }> {
+  if (!_routeMeta) _routeMeta = require('./gtfs/route-meta.json');
+  return Object.entries(_routeMeta!).map(([lineNum, { name }]) => ({ lineNum, name }));
+}
+
+export function getLinesNearOrigin(
+  origin: { lat: number; lon: number },
+  radiusKm = 1.0
+): string[] {
+  const srd = getStopRouteDirs();
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const stop of getStops()) {
+    if (haversineKm(origin, stop) > radiusKm) continue;
+    for (const { lineNum } of srd[stop.id] ?? []) {
+      if (!seen.has(lineNum)) { seen.add(lineNum); result.push(lineNum); }
     }
   }
-  return _lineStopsIndex;
+  return result;
+}
+
+export function getOrderedStopsForDir(
+  lineNum: string,
+  dir: 0 | 1
+): IzmirStop[] {
+  const seqs = getRouteStopSeqs();
+  const idx = getStopIndex();
+  const stopIds = seqs[`${lineNum}_${dir}`] ?? [];
+  return stopIds.flatMap(id => { const s = idx.get(id); return s ? [s] : []; });
+}
+
+export function findBoardAlightPair(
+  lineNum: string,
+  origin: { lat: number; lon: number },
+  dest: { lat: number; lon: number }
+): { board: IzmirStop; alight: IzmirStop; dir: 0 | 1 } | null {
+  const ring = isRingRoute(lineNum);
+  const dirs: (0 | 1)[] = ring ? [0] : [0, 1];
+  let best: { board: IzmirStop; alight: IzmirStop; dir: 0 | 1; cost: number } | null = null;
+
+  for (const dir of dirs) {
+    const stops = getOrderedStopsForDir(lineNum, dir);
+    if (stops.length < 2) continue;
+
+    let boardI = 0, boardDist = haversineKm(origin, stops[0]);
+    for (let i = 1; i < stops.length - 1; i++) {
+      const d = haversineKm(origin, stops[i]);
+      if (d < boardDist) { boardDist = d; boardI = i; }
+    }
+
+    const alightStart = ring ? 0 : boardI + 1;
+    if (alightStart >= stops.length) continue;
+
+    let alightI = alightStart, alightDist = haversineKm(dest, stops[alightStart]);
+    for (let i = alightStart + 1; i < stops.length; i++) {
+      const d = haversineKm(dest, stops[i]);
+      if (d < alightDist) { alightDist = d; alightI = i; }
+    }
+
+    if (!ring && alightI <= boardI) continue;
+
+    const cost = boardDist + alightDist;
+    if (!best || cost < best.cost) {
+      best = { board: stops[boardI], alight: stops[alightI], dir, cost };
+    }
+  }
+
+  return best ? { board: best.board, alight: best.alight, dir: best.dir } : null;
 }

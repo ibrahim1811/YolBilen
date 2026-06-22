@@ -36,26 +36,29 @@ export function HomeScreen() {
   useEffect(() => {
     if (origin !== null) return;
     (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
-      const pos = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const { latitude, longitude } = pos.coords;
-      const stops = getStops();
-      let nearestStop = stops[0];
-      let minDist = Infinity;
-      for (const s of stops) {
-        const d = Math.hypot(s.lat - latitude, s.lon - longitude);
-        if (d < minDist) { minDist = d; nearestStop = s; }
-      }
-      setOrigin({
-        name: nearestStop.name,
-        latitude,
-        longitude,
-      });
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const pos = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        const { latitude, longitude } = pos.coords;
+        const stops = getStops();
+        if (!stops.length) return;
+        let nearestStop = stops[0];
+        let minDist = Infinity;
+        for (const s of stops) {
+          const d = Math.hypot(s.lat - latitude, s.lon - longitude);
+          if (d < minDist) { minDist = d; nearestStop = s; }
+        }
+        setOrigin({
+          name: nearestStop.name,
+          latitude,
+          longitude,
+        });
+      } catch {}
     })();
-  }, []);
+  }, [origin, setOrigin]);
 
   useEffect(() => {
     if (!user || user.isGuest) return;

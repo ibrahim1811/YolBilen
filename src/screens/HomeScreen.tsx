@@ -9,6 +9,8 @@ import { FavoriteLocationCard, AddFavoriteCard } from '../components/home/Favori
 import { FavoriteLineCard } from '../components/home/FavoriteLineCard';
 import { AddFavoriteModal } from '../components/home/AddFavoriteModal';
 import { WeatherBanner } from '../components/home/WeatherBanner';
+import * as Location from 'expo-location';
+import { getStops } from '../data/gtfsData';
 import { useAppStore } from '../store/useAppStore';
 import { useFavorites } from '../hooks/useFavorites';
 import { useWeather } from '../hooks/useWeather';
@@ -30,6 +32,30 @@ export function HomeScreen() {
   const [routine, setRoutine] = useState<JourneyRecord | null>(null);
   const h = new Date().getHours();
   const isNight = h >= 22 || h < 6;
+
+  useEffect(() => {
+    if (origin !== null) return;
+    (async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') return;
+      const pos = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+      const { latitude, longitude } = pos.coords;
+      const stops = getStops();
+      let nearestStop = stops[0];
+      let minDist = Infinity;
+      for (const s of stops) {
+        const d = Math.hypot(s.lat - latitude, s.lon - longitude);
+        if (d < minDist) { minDist = d; nearestStop = s; }
+      }
+      setOrigin({
+        name: nearestStop.name,
+        latitude,
+        longitude,
+      });
+    })();
+  }, []);
 
   useEffect(() => {
     if (!user || user.isGuest) return;

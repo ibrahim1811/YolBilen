@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
-import { Text, Surface, useTheme, Button, Snackbar, TouchableRipple, Divider, Chip } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, TextInput } from 'react-native';
+import { Text, Surface, useTheme, Button, Snackbar, TouchableRipple, Divider, Chip, ActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Location from 'expo-location';
 import { FeedbackChipGroup } from '../components/community/FeedbackChipGroup';
 import { LineSelectorModal } from '../components/community/LineSelector';
 import { RecentFeedbackCard } from '../components/community/RecentFeedbackCard';
 import { submitFeedback, getRecentFeedbacks } from '../services/firebase/firestore';
 import { postAlert, getActiveAlerts, upvoteAlert, ALERT_LABELS, ALERT_ICONS, ALERT_EXPIRY_MINS } from '../services/firebase/alertService';
+import { checkIsAdmin } from '../services/firebase/adminService';
+import { getApproachingBuses, nearestIztekStopId, type ApproachingBus } from '../services/iztek/iztekService';
 import { useAppStore } from '../store/useAppStore';
-import type { User, Feedback, CommunityAlert } from '../types';
+import type { Feedback, CommunityAlert } from '../types';
 
 type ComfortOption = Feedback['comfort'];
 type AcOption = Feedback['ac'];
@@ -55,6 +58,14 @@ export function CommunityScreen() {
   const [alerts, setAlerts] = useState<CommunityAlert[]>([]);
   const [alertType, setAlertType] = useState<CommunityAlert['type']>('ac_broken');
   const [showAlertForm, setShowAlertForm] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  // GPS otobüs tespiti
+  const [detectingBus, setDetectingBus] = useState(false);
+  const [nearbyBuses, setNearbyBuses] = useState<ApproachingBus[]>([]);
+  const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
+  const [plateInput, setPlateInput] = useState('');
+  const [showBusList, setShowBusList] = useState(false);
 
   const loadRecent = useCallback(async () => {
     try {
@@ -65,6 +76,34 @@ export function CommunityScreen() {
   }, []);
 
   useEffect(() => { loadRecent(); }, []);
+
+  useEffect(() => {
+    if (user && !user.isGuest) {
+      checkIsAdmin(user.email).then(setIsAdmin).catch(() => {});
+    } else {
+      setIsAdmin(false);
+    }
+  }, [user?.uid]);
+
+  async function detectNearbyBuses() {
+    setDetectingBus(true);
+    setNearbyBuses([]);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') { setSnackbar('Konum izni gerekli'); return; }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const iztekId = nearestIztekStopId(pos.coords.latitude, pos.coords.longitude);
+      if (!iztekId) { setSnackbar('Yakınında durak bulunamadı.'); return; }
+      const buses = await getApproachingBuses(iztekId);
+      if (buses.length === 0) { setSnackbar('Şu an yaklaşan otobüs yok.'); return; }
+      setNearbyBuses(buses);
+      setShowBusList(true);
+    } catch {
+      setSnackbar('Konum alınamadı.');
+    } finally {
+      setDetectingBus(false);
+    }
+  }
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -85,13 +124,26 @@ export function CommunityScreen() {
         temperature: temp,
         crowd,
         timestamp: new Date(),
+        busId: selectedBusId ?? undefined,
+        plateNumber: plateInput.trim() || undefined,
       });
       setSnackbar('Teşekkürler! +10 puan kazandınız.');
       if (user) setUser({ ...user, contributionPoints: (user.contributionPoints ?? 0) + 10 });
       setSelectedLine(null);
-      loadRecent();
-    } catch {
-      setSnackbar('Hata oluştu, tekrar deneyin.');
+      setSelectedBusId(null);
+      setPlateInput('');
+      setNearbyBuses([]);
+      setShowBusList(false);
+      await loadRecent();
+    } catch (e: any) {
+      console.error('submitFeedback error:', e?.code, e?.message);
+      if (e?.message?.includes('auth/')) {
+        setSnackbar('Oturumunuz sona erdi. Lütfen yeniden giriş yapın.');
+      } else if (e?.code?.includes('permission-denied')) {
+        setSnackbar('Gönderme izni yok. Lütfen giriş yapın.');
+      } else {
+        setSnackbar(`Hata: ${e?.message ?? 'Bilinmeyen hata'}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -109,44 +161,109 @@ export function CommunityScreen() {
           Yolculuğunuzu değerlendirin, topluluğa katkı sağlayın.
         </Text>
 
-        {/* Line Selector */}
-        <TouchableRipple
-          onPress={() => setShowLineModal(true)}
-          style={[styles.lineSelector, {
-            backgroundColor: selectedLine ? theme.colors.primaryContainer : theme.colors.surface,
-            borderColor: selectedLine ? theme.colors.primary : theme.colors.outline,
-          }]}
-          borderless
-        >
-          <View style={styles.lineSelectorInner}>
-            <MaterialCommunityIcons
-              name="bus"
-              size={22}
-              color={selectedLine ? theme.colors.primary : theme.colors.onSurfaceVariant}
-            />
-            <View style={styles.lineSelectorText}>
-              {selectedLine ? (
-                <>
-                  <Text style={[styles.lineSelectorNumber, { color: theme.colors.primary }]}>
-                    Hat {selectedLine.number}
+        {/* Otobüs Tespiti — GPS veya elle */}
+        <View style={styles.busDetectRow}>
+          <TouchableRipple
+            onPress={() => setShowLineModal(true)}
+            style={[styles.lineSelector, styles.lineSelectorFlex, {
+              backgroundColor: selectedLine ? theme.colors.primaryContainer : theme.colors.surface,
+              borderColor: selectedLine ? theme.colors.primary : theme.colors.outline,
+            }]}
+            borderless
+          >
+            <View style={styles.lineSelectorInner}>
+              <MaterialCommunityIcons
+                name="bus"
+                size={22}
+                color={selectedLine ? theme.colors.primary : theme.colors.onSurfaceVariant}
+              />
+              <View style={styles.lineSelectorText}>
+                {selectedLine ? (
+                  <>
+                    <Text style={[styles.lineSelectorNumber, { color: theme.colors.primary }]}>
+                      Hat {selectedLine.number}
+                    </Text>
+                    <Text style={[styles.lineSelectorName, { color: theme.colors.onSurfaceVariant }]}>
+                      {selectedLine.name}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={[styles.lineSelectorPlaceholder, { color: theme.colors.onSurfaceVariant }]}>
+                    Hangi hattasınız?
                   </Text>
-                  <Text style={[styles.lineSelectorName, { color: theme.colors.onSurfaceVariant }]}>
-                    {selectedLine.name}
-                  </Text>
-                </>
-              ) : (
-                <Text style={[styles.lineSelectorPlaceholder, { color: theme.colors.onSurfaceVariant }]}>
-                  Hangi hattasinız? Seçin...
-                </Text>
-              )}
+                )}
+              </View>
+              <MaterialCommunityIcons name="chevron-down" size={22} color={theme.colors.onSurfaceVariant} />
             </View>
-            <MaterialCommunityIcons
-              name="chevron-down"
-              size={22}
-              color={theme.colors.onSurfaceVariant}
+          </TouchableRipple>
+
+          <TouchableRipple
+            onPress={detectNearbyBuses}
+            style={[styles.gpsBtn, { backgroundColor: theme.colors.secondaryContainer, borderColor: theme.colors.outline }]}
+            borderless
+          >
+            <View style={styles.gpsBtnInner}>
+              {detectingBus
+                ? <ActivityIndicator size={20} color={theme.colors.secondary} />
+                : <MaterialCommunityIcons name="map-marker-radius" size={22} color={theme.colors.secondary} />}
+              <Text style={[styles.gpsBtnLabel, { color: theme.colors.secondary }]}>Yakınımda</Text>
+            </View>
+          </TouchableRipple>
+        </View>
+
+        {/* Yaklaşan otobüs listesi */}
+        {showBusList && nearbyBuses.length > 0 && (
+          <Surface style={[styles.busListCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
+            <Text style={[styles.busListTitle, { color: theme.colors.onSurface }]}>Yaklaşan Otobüsler</Text>
+            {nearbyBuses.map(b => {
+              const isSelected = selectedBusId === String(b.otobusId);
+              return (
+                <TouchableRipple
+                  key={b.otobusId}
+                  onPress={() => {
+                    setSelectedBusId(String(b.otobusId));
+                    setSelectedLine({ number: String(b.hatNumarasi), name: b.hatAdi });
+                  }}
+                  style={[styles.busRow, {
+                    backgroundColor: isSelected ? theme.colors.primaryContainer : 'transparent',
+                    borderColor: isSelected ? theme.colors.primary : theme.colors.outlineVariant,
+                  }]}
+                  borderless
+                >
+                  <View style={styles.busRowInner}>
+                    <MaterialCommunityIcons name="bus" size={18} color={isSelected ? theme.colors.primary : theme.colors.onSurfaceVariant} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.busRowLine, { color: isSelected ? theme.colors.primary : theme.colors.onSurface }]}>
+                        Hat {b.hatNumarasi}
+                      </Text>
+                      <Text style={[styles.busRowDetail, { color: theme.colors.onSurfaceVariant }]}>
+                        {b.hatAdi} · {b.kalanDurakSayisi} durak uzakta
+                      </Text>
+                    </View>
+                    <Text style={[styles.busRowId, { color: theme.colors.onSurfaceVariant }]}>#{b.otobusId}</Text>
+                    {isSelected && <MaterialCommunityIcons name="check-circle" size={18} color={theme.colors.primary} />}
+                  </View>
+                </TouchableRipple>
+              );
+            })}
+          </Surface>
+        )}
+
+        {/* Plaka girişi (isteğe bağlı) */}
+        {selectedLine && (
+          <Surface style={[styles.plateCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
+            <MaterialCommunityIcons name="card-text-outline" size={18} color={theme.colors.onSurfaceVariant} />
+            <TextInput
+              style={[styles.plateInput, { color: theme.colors.onSurface }]}
+              placeholder="Otobüs plakası (isteğe bağlı)"
+              placeholderTextColor={theme.colors.onSurfaceVariant}
+              value={plateInput}
+              onChangeText={setPlateInput}
+              autoCapitalize="characters"
+              maxLength={12}
             />
-          </View>
-        </TouchableRipple>
+          </Surface>
+        )}
 
         {/* Feedback Form */}
         {selectedLine && (
@@ -208,7 +325,7 @@ export function CommunityScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Topluluk Uyarıları</Text>
-            {user && !user.isGuest && selectedLine && (
+            {isAdmin && selectedLine && (
               <TouchableOpacity onPress={() => setShowAlertForm(v => !v)}>
                 <MaterialCommunityIcons name={showAlertForm ? 'minus-circle-outline' : 'plus-circle-outline'} size={22} color={theme.colors.primary} />
               </TouchableOpacity>
@@ -246,7 +363,9 @@ export function CommunityScreen() {
                     setSnackbar('Uyarı gönderildi!');
                     setShowAlertForm(false);
                     loadRecent();
-                  } catch { setSnackbar('Hata oluştu.'); }
+                  } catch (e: any) {
+                    setSnackbar(e?.message?.includes('auth/') ? 'Oturumunuz sona erdi. Lütfen yeniden giriş yapın.' : 'Hata oluştu, tekrar deneyin.');
+                  }
                 }}
               >
                 Uyarı Gönder
@@ -333,11 +452,13 @@ const styles = StyleSheet.create({
   scroll: { padding: 20, gap: 20, paddingBottom: 40 },
   title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.5 },
   subtitle: { fontSize: 14, lineHeight: 20, marginTop: -4 },
+  busDetectRow: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
   lineSelector: {
     borderRadius: 16,
     borderWidth: 1.5,
     overflow: 'hidden',
   },
+  lineSelectorFlex: { flex: 1 },
   lineSelectorInner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -348,6 +469,18 @@ const styles = StyleSheet.create({
   lineSelectorNumber: { fontSize: 16, fontWeight: '700' },
   lineSelectorName: { fontSize: 13 },
   lineSelectorPlaceholder: { fontSize: 15 },
+  gpsBtn: { borderRadius: 16, borderWidth: 1.5, overflow: 'hidden', minWidth: 72 },
+  gpsBtnInner: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 10, gap: 4 },
+  gpsBtnLabel: { fontSize: 11, fontWeight: '600' },
+  busListCard: { borderRadius: 14, padding: 12, gap: 8 },
+  busListTitle: { fontSize: 13, fontWeight: '700', marginBottom: 4 },
+  busRow: { borderRadius: 10, borderWidth: 1, overflow: 'hidden' },
+  busRowInner: { flexDirection: 'row', alignItems: 'center', padding: 10, gap: 10 },
+  busRowLine: { fontSize: 14, fontWeight: '700' },
+  busRowDetail: { fontSize: 12 },
+  busRowId: { fontSize: 12 },
+  plateCard: { borderRadius: 14, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 4, gap: 10 },
+  plateInput: { flex: 1, fontSize: 14, paddingVertical: 10 },
   formCard: { borderRadius: 16, padding: 20, gap: 16 },
   divider: { marginVertical: 4 },
   submitBtn: { borderRadius: 12, marginTop: 8 },

@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { Text, Portal, Modal, Searchbar, useTheme, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { IZMIR_ROUTES } from '../../data/izmir-routes';
+import { getAllLines } from '../../data/gtfsData';
 
-const ALL_LINES = IZMIR_ROUTES.map(r => ({ number: r.lineNumber, name: r.lineName }));
+const ALL_LINES = getAllLines().map(r => ({ number: r.lineNum, name: r.name }));
 
 interface Props {
   visible: boolean;

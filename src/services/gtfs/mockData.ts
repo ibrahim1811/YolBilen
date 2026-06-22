@@ -1,6 +1,6 @@
 import type { Route, Location } from '../../types';
 import { analyzeSunExposure } from '../sun/sunAnalysis';
-import { IZMIR_ROUTES } from '../../data/izmir-routes';
+import { getAllLines } from '../../data/gtfsData';
 
 const mockStops: Location[] = [
   { name: 'Konak',            latitude: 38.4192, longitude: 27.1287 },
@@ -29,10 +29,10 @@ export function getMockRoutes(origin: Location, destination: Location): Route[] 
     departureTime: new Date(),
   });
 
-  return IZMIR_ROUTES.slice(0, 8).map((r, i) => ({
-    id: `route-${r.id}`,
-    lineNumber: r.lineNumber,
-    lineName: r.lineName,
+  return getAllLines().slice(0, 8).map((r, i) => ({
+    id: `route-${r.lineNum}`,
+    lineNumber: r.lineNum,
+    lineName: r.name,
     estimatedDuration: 15 + (i * 7) % 45,
     transfers: [],
     nextArrival: 1 + (i * 3) % 15,

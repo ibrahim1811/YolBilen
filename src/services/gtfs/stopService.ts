@@ -1,13 +1,12 @@
 import type { Stop, StopArrival } from '../../types';
-import { getStops } from '../../data/gtfsData';
-import { IZMIR_ROUTES } from '../../data/izmir-routes';
+import { getStops, getAllLines } from '../../data/gtfsData';
 
 export function getMockArrivals(stop: Stop): StopArrival[] {
-  return IZMIR_ROUTES.slice(0, 4).map((route, i) => ({
-    lineNumber: route.lineNumber,
-    lineName: route.lineName,
+  return getAllLines().slice(0, 4).map((route, i) => ({
+    lineNumber: route.lineNum,
+    lineName: route.name,
     minutesAway: [2, 5, 9, 14][i],
-    direction: route.lineName.split(' - ')[1] ?? 'Son Durak',
+    direction: route.name.split(' - ')[1] ?? 'Son Durak',
   }));
 }
 

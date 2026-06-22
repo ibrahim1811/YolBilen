@@ -8,7 +8,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
-import { IZMIR_ROUTES } from '../data/izmir-routes';
+import { getAllLines } from '../data/gtfsData';
 
 const typeConfig: Record<string, { icon: string; color: string; label: string }> = {
   bus: { icon: 'bus', color: '#1A73E8', label: 'Otobüs' },
@@ -22,9 +22,9 @@ export function LinesScreen() {
   const [search, setSearch] = React.useState('');
   const [filter, setFilter] = React.useState<string | null>(null);
 
-  const allLines = React.useMemo(() => IZMIR_ROUTES.map(r => ({
-    number: r.lineNumber,
-    name: r.lineName,
+  const allLines = React.useMemo(() => getAllLines().map(r => ({
+    number: r.lineNum,
+    name: r.name,
     type: 'bus' as const,
     crowdAvg: 'medium' as const,
   })), []);

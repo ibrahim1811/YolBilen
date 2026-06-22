@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
-import { Text, useTheme, Appbar, Surface, Chip, Button, Snackbar, Divider } from 'react-native-paper';
+import { Text, useTheme, Appbar, Surface, Chip, Button, Snackbar, Divider, ActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ArrivalRow } from '../components/stop/ArrivalRow';
-import { getMockArrivals } from '../services/gtfs/stopService';
 import { useFavorites } from '../hooks/useFavorites';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, StopArrival } from '../types';
 import { t } from '../i18n';
+import { getApproachingBuses, nearestIztekStopId, minsFromRemainingStops } from '../services/iztek/iztekService';
+import { getNextArrivalMins } from '../services/firebase/scheduleService';
+import { getRouteName } from '../data/gtfsData';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StopDetail'>;
 
@@ -26,13 +28,39 @@ export function StopDetailScreen({ navigation, route }: Props) {
 
   const isFavorited = favoriteLocations.some((f) => f.location.name === stop.name);
 
-  const loadArrivals = useCallback(() => {
-    setArrivals(getMockArrivals(stop));
-  }, [stop.id]);
+  const loadArrivals = useCallback(async () => {
+    const iztekId = nearestIztekStopId(stop.latitude, stop.longitude);
+    if (!iztekId) {
+      const fallback: StopArrival[] = (stop.lines ?? [])
+        .map(lineNum => {
+          const lineName = getRouteName(lineNum) ?? `Hat ${lineNum}`;
+          const mins = getNextArrivalMins(lineNum);
+          return {
+            lineNumber: lineNum,
+            lineName,
+            minutesAway: mins,
+            direction: lineName.split(' - ')[1] ?? 'Son Durak',
+          };
+        })
+        .filter(a => a.minutesAway < 999)
+        .sort((a, b) => a.minutesAway - b.minutesAway);
+      setArrivals(fallback);
+      return;
+    }
+    const buses = await getApproachingBuses(iztekId);
+    const mapped: StopArrival[] = buses.map(b => {
+      return {
+        lineNumber: String(b.hatNumarasi),
+        lineName: b.hatAdi || getRouteName(String(b.hatNumarasi)) || `Hat ${b.hatNumarasi}`,
+        minutesAway: minsFromRemainingStops(b.kalanDurakSayisi),
+        direction: b.hatAdi.split(' - ')[1] ?? 'Son Durak',
+      };
+    });
+    setArrivals(mapped);
+  }, [stop.latitude, stop.longitude, stop.lines]);
 
   useEffect(() => {
     loadArrivals();
-    // 30 saniyede bir güncelle
     const interval = setInterval(() => {
       setCountdown((c) => {
         if (c <= 1) { loadArrivals(); return 30; }

@@ -204,6 +204,7 @@ export type RootStackParamList = {
   JourneyHistory: undefined;
   AdminPanel: undefined;
   BusCard: { plate: string };
+  RouteReplay: { route: Route };
 };
 
 export interface BusCard {

@@ -15,6 +15,7 @@ import { NearbyStopsScreen } from '../screens/NearbyStopsScreen';
 import { JourneyHistoryScreen } from '../screens/JourneyHistoryScreen';
 import { AdminPanelScreen } from '../screens/AdminPanelScreen';
 import { BusCardScreen } from '../screens/BusCardScreen';
+import { RouteReplayScreen } from '../screens/RouteReplayScreen';
 import { TabNavigator } from './TabNavigator';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
@@ -97,6 +98,11 @@ export function AppNavigator() {
               name="BusCard"
               component={BusCardScreen}
               options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="RouteReplay"
+              component={RouteReplayScreen}
+              options={{ animation: 'slide_from_bottom' }}
             />
           </>
         )}

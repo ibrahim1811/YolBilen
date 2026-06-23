@@ -207,6 +207,14 @@ export function RouteResultScreen({ navigation }: Props) {
         >
           Yolculuğu Başlat
         </Button>
+        <Button
+          mode="outlined"
+          icon="play-circle"
+          style={{ marginTop: 8, marginHorizontal: 16 }}
+          onPress={() => navigation.navigate('RouteReplay', { route: selectedRoute! })}
+        >
+          Rotayı Oynat
+        </Button>
       </ScrollView>
     </SafeAreaView>
   );

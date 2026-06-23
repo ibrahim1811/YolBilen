@@ -5,80 +5,115 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, RouteStep } from '../types';
-import { getLineStopsIndex } from '../data/gtfsData';
+import { getLineBusPositions, type BusPosition } from '../services/iztek/iztekService';
+import { analyzeSunExposureAlongRoute } from '../services/sun/sunAnalysis';
+import type { SunAnalysis } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RouteMap'>;
 
 const IZMIR_CENTER = [38.4192, 27.1287];
 
 function buildMapHtml(params: {
-  stops: { id: string; name: string; lat: number; lon: number }[];
-  polyline: [number, number][];
   boarding: { latitude: number; longitude: number; name: string } | null;
   alighting: { latitude: number; longitude: number; name: string } | null;
   center: [number, number];
   steps?: RouteStep[];
+  busPositions?: BusPosition[];
 }): string {
-  const { stops, polyline, boarding, alighting, center, steps } = params;
-
-  const markersJs = stops
-    .map(
-      s =>
-        `L.circleMarker([${s.lat},${s.lon}],{radius:5,color:'#FF9800',fillColor:'#FF9800',fillOpacity:0.9,weight:2}).bindPopup(${JSON.stringify(s.name)}).addTo(map);`
-    )
-    .join('\n');
-
+  const { boarding, alighting, center, steps, busPositions = [] } = params;
   const transitStep = steps?.find(s => s.type === 'transit');
+  const midStops = transitStep?.intermediateStops ?? [];
+  const boardStop = transitStep?.boardStop ?? null;
+  const alightStop = transitStep?.alightStop ?? null;
 
-  // Intermediate stops — small blue dots
-  const intermediateJs = (transitStep?.intermediateStops ?? [])
-    .map(s => `L.circleMarker([${s.latitude},${s.longitude}],{radius:4,color:'#1A73E8',fillColor:'#1A73E8',fillOpacity:0.7,weight:1}).bindPopup(${JSON.stringify(s.name)}).addTo(map);`)
-    .join('\n');
+  // Ara duraklar — turuncu küçük çember
+  const intermediateJs = midStops
+    .map(s =>
+      `L.circleMarker([${s.latitude},${s.longitude}],` +
+      `{radius:6,color:'#FF6D00',fillColor:'#FF6D00',fillOpacity:0.9,weight:2})` +
+      `.bindPopup(${JSON.stringify(s.name)}).addTo(map);`
+    ).join('\n');
 
-  // Walking segments — dashed gray lines
+  // Yürüyüş segmentleri — gri kesikli
   let walkLinesJs = '';
-  if (transitStep?.boardStop && transitStep?.alightStop && boarding && alighting) {
-    const b = transitStep.boardStop;
-    const a = transitStep.alightStop;
+  if (boardStop && alightStop && boarding && alighting) {
     walkLinesJs =
-      `L.polyline([[${boarding.latitude},${boarding.longitude}],[${b.latitude},${b.longitude}]],{color:'#888',weight:2,dashArray:'5,8'}).addTo(map);\n` +
-      `L.polyline([[${a.latitude},${a.longitude}],[${alighting.latitude},${alighting.longitude}]],{color:'#888',weight:2,dashArray:'5,8'}).addTo(map);`;
+      `L.polyline([[${boarding.latitude},${boarding.longitude}],[${boardStop.latitude},${boardStop.longitude}]],` +
+      `{color:'#757575',weight:3,dashArray:'6,8',opacity:0.7}).addTo(map);\n` +
+      `L.polyline([[${alightStop.latitude},${alightStop.longitude}],[${alighting.latitude},${alighting.longitude}]],` +
+      `{color:'#757575',weight:3,dashArray:'6,8',opacity:0.7}).addTo(map);`;
   }
 
-  // Transit polyline through intermediate stops when available
-  let polylineJs: string;
-  if (transitStep?.boardStop && transitStep?.alightStop) {
-    const pts: [number, number][] = [
-      [transitStep.boardStop.latitude, transitStep.boardStop.longitude],
-      ...(transitStep.intermediateStops ?? []).map(s => [s.latitude, s.longitude] as [number, number]),
-      [transitStep.alightStop.latitude, transitStep.alightStop.longitude],
-    ];
-    polylineJs = `L.polyline(${JSON.stringify(pts)},{color:'#1A73E8',weight:3}).addTo(map);`;
-  } else if (polyline.length > 1) {
-    polylineJs = `L.polyline(${JSON.stringify(polyline)},{color:'#1A73E8',weight:3}).addTo(map);`;
-  } else if (boarding && alighting) {
-    polylineJs = `L.polyline([[${boarding.latitude},${boarding.longitude}],[${alighting.latitude},${alighting.longitude}]],{color:'#1A73E8',weight:3,dashArray:'8,4'}).addTo(map);`;
-  } else {
-    polylineJs = '';
-  }
+  // Otobüs güzergahı — OSRM ile yol takip eden polyline
+  const transitCoords: [number, number][] = boardStop && alightStop
+    ? [
+        [boardStop.latitude, boardStop.longitude],
+        ...midStops.map(s => [s.latitude, s.longitude] as [number, number]),
+        [alightStop.latitude, alightStop.longitude],
+      ]
+    : boarding && alighting
+      ? [[boarding.latitude, boarding.longitude], [alighting.latitude, alighting.longitude]]
+      : [];
 
-  const boardingJs = boarding
-    ? `L.marker([${boarding.latitude},${boarding.longitude}],{icon:greenIcon}).bindPopup(${JSON.stringify('Biniş: ' + boarding.name)}).addTo(map).openPopup();`
+  const osrmCoords = transitCoords.map(([lat, lon]) => `${lon},${lat}`).join(';');
+  const fallbackPts = JSON.stringify(transitCoords);
+
+  const osrmFetchJs = transitCoords.length >= 2
+    ? `fetch('https://router.project-osrm.org/route/v1/driving/${osrmCoords}?overview=full&geometries=geojson')` +
+      `.then(function(r){return r.json();})` +
+      `.then(function(data){` +
+      `if(data.routes&&data.routes[0]){` +
+      `var coords=data.routes[0].geometry.coordinates.map(function(c){return[c[1],c[0]];});` +
+      `L.polyline(coords,{color:'#1A73E8',weight:5,opacity:0.9,lineJoin:'round'}).addTo(map);` +
+      `}else{L.polyline(${fallbackPts},{color:'#1A73E8',weight:5,dashArray:'10,5'}).addTo(map);}` +
+      `}).catch(function(){L.polyline(${fallbackPts},{color:'#1A73E8',weight:5,dashArray:'10,5'}).addTo(map);});`
     : '';
 
-  const alightingJs = alighting
-    ? `L.marker([${alighting.latitude},${alighting.longitude}],{icon:redIcon}).bindPopup(${JSON.stringify('İniş: ' + alighting.name)}).addTo(map);`
+  // Canlı otobüs marker'ları
+  const busMarkersJs = busPositions.map(b => {
+    const color = b.yon === 0 ? '#1A73E8' : '#FF6D00';
+    const label = b.yon === 0 ? 'Gidiş' : 'Dönüş';
+    return (
+      `L.marker([${b.lat},${b.lon}],{icon:L.divIcon({` +
+      `html:'<div style="background:${color};color:#fff;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 2px 8px rgba(0,0,0,0.4)">🚌</div>',` +
+      `iconSize:[30,30],iconAnchor:[15,15],className:''})}).bindPopup('🚌 #${b.otobusId} · ${label}').addTo(map);`
+    );
+  }).join('\n');
+
+  // GTFS biniş durağı — yeşil çember
+  const boardStopJs = boardStop
+    ? `L.circleMarker([${boardStop.latitude},${boardStop.longitude}],` +
+      `{radius:10,color:'#34A853',fillColor:'#34A853',fillOpacity:1,weight:3})` +
+      `.bindPopup(${JSON.stringify('🟢 Biniş Durağı: ' + boardStop.name)}).addTo(map);`
+    : '';
+
+  // GTFS iniş durağı — kırmızı çember
+  const alightStopJs = alightStop
+    ? `L.circleMarker([${alightStop.latitude},${alightStop.longitude}],` +
+      `{radius:10,color:'#EA4335',fillColor:'#EA4335',fillOpacity:1,weight:3})` +
+      `.bindPopup(${JSON.stringify('🔴 İniş Durağı: ' + alightStop.name)}).addTo(map);`
+    : '';
+
+  // Kullanıcı GPS biniş noktası — mavi pin
+  const userBoardJs = boarding
+    ? `L.marker([${boarding.latitude},${boarding.longitude}],{icon:userIcon})` +
+      `.bindPopup(${JSON.stringify('📍 ' + boarding.name)}).addTo(map).openPopup();`
+    : '';
+
+  // Kullanıcı GPS iniş noktası — mor pin
+  const userAlightJs = alighting
+    ? `L.marker([${alighting.latitude},${alighting.longitude}],{icon:destIcon})` +
+      `.bindPopup(${JSON.stringify('🏁 ' + alighting.name)}).addTo(map);`
     : '';
 
   const allPts: [number, number][] = [
-    ...(polyline.length > 1 ? polyline : []),
     ...(boarding ? [[boarding.latitude, boarding.longitude] as [number, number]] : []),
     ...(alighting ? [[alighting.latitude, alighting.longitude] as [number, number]] : []),
+    ...transitCoords,
   ];
-  const boundsJs =
-    allPts.length > 1
-      ? `map.fitBounds(${JSON.stringify(allPts)},{padding:[40,40]});`
-      : `map.setView([${center[0]},${center[1]}],13);`;
+  const boundsJs = allPts.length > 1
+    ? `map.fitBounds(${JSON.stringify(allPts)},{padding:[60,60]});`
+    : `map.setView([${center[0]},${center[1]}],14);`;
 
   return `<!DOCTYPE html>
 <html>
@@ -86,29 +121,27 @@ function buildMapHtml(params: {
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<style>
-  html,body,#map{margin:0;padding:0;height:100%;width:100%;}
-</style>
+<style>html,body,#map{margin:0;padding:0;height:100%;width:100%;}</style>
 </head>
 <body>
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 var map=L.map('map',{zoomControl:true});
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'&copy; OpenStreetMap',maxZoom:19
-}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap',maxZoom:19}).addTo(map);
 
-var greenIcon=L.icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34]});
-var redIcon=L.icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34]});
+var userIcon=L.divIcon({html:'<div style="background:#1A73E8;border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 2px 8px rgba(0,0,0,0.5)"></div>',iconSize:[18,18],iconAnchor:[9,9],className:''});
+var destIcon=L.divIcon({html:'<div style="background:#9C27B0;border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 2px 8px rgba(0,0,0,0.5)"></div>',iconSize:[18,18],iconAnchor:[9,9],className:''});
 
-${markersJs}
 ${intermediateJs}
 ${walkLinesJs}
-${polylineJs}
-${boardingJs}
-${alightingJs}
+${boardStopJs}
+${alightStopJs}
+${busMarkersJs}
+${userBoardJs}
+${userAlightJs}
 ${boundsJs}
+${osrmFetchJs}
 </script>
 </body>
 </html>`;
@@ -119,32 +152,57 @@ export function RouteMapScreen({ navigation, route: navRoute }: Props) {
   const { route } = navRoute.params;
   const boarding = route.boardingStop ?? null;
   const alighting = route.alightingStop ?? null;
+  const [busPositions, setBusPositions] = React.useState<BusPosition[]>([]);
+  const [liveSunAnalysis, setLiveSunAnalysis] = React.useState<SunAnalysis | null>(null);
 
-  const lineStops = React.useMemo(() => {
-    const idx = getLineStopsIndex();
-    return (idx.get(route.lineNumber) ?? []).slice(0, 80);
+  const routeTransitStep = route.steps?.find(s => s.type === 'transit');
+  const baseWaypoints: Array<{ latitude: number; longitude: number }> = routeTransitStep?.boardStop
+    ? [routeTransitStep.boardStop, ...(routeTransitStep.intermediateStops ?? []), routeTransitStep.alightStop!]
+    : [];
+
+  React.useEffect(() => {
+    let cancelled = false;
+    async function fetchBuses() {
+      const positions = await getLineBusPositions(route.lineNumber);
+      if (cancelled) return;
+      setBusPositions(positions);
+
+      // Biniş durağına en yakın otobüsü bul → yönünü kullan
+      if (baseWaypoints.length >= 2 && positions.length > 0) {
+        const board = baseWaypoints[0];
+        function d(b: BusPosition) {
+          const dLat = b.lat - board.latitude;
+          const dLon = b.lon - board.longitude;
+          return dLat * dLat + dLon * dLon;
+        }
+        const nearest = positions.reduce((a, b) => d(a) < d(b) ? a : b);
+        // Yon=1 → dönüş yönü → güzergahı ters çevir
+        const waypoints = nearest.yon === 1 ? [...baseWaypoints].reverse() : baseWaypoints;
+        setLiveSunAnalysis(analyzeSunExposureAlongRoute(waypoints, new Date()));
+      }
+    }
+    fetchBuses();
+    const interval = setInterval(fetchBuses, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [route.lineNumber]);
 
-  const polyline: [number, number][] = lineStops.map(s => [s.lat, s.lon]);
-
-  const center: [number, number] =
-    lineStops.length > 0
-      ? [lineStops[Math.floor(lineStops.length / 2)].lat, lineStops[Math.floor(lineStops.length / 2)].lon]
-      : boarding
-      ? [boarding.latitude, boarding.longitude]
-      : IZMIR_CENTER as [number, number];
+  const transitStep = routeTransitStep;
+  const center: [number, number] = transitStep?.boardStop
+    ? [transitStep.boardStop.latitude, transitStep.boardStop.longitude]
+    : boarding
+    ? [boarding.latitude, boarding.longitude]
+    : IZMIR_CENTER as [number, number];
 
   const html = React.useMemo(
     () =>
       buildMapHtml({
-        stops: lineStops.map(s => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon })),
-        polyline,
         boarding: boarding ? { latitude: boarding.latitude, longitude: boarding.longitude, name: boarding.name } : null,
         alighting: alighting ? { latitude: alighting.latitude, longitude: alighting.longitude, name: alighting.name } : null,
         center,
         steps: route.steps,
+        busPositions,
       }),
-    [lineStops, boarding, alighting, route.steps]
+    [boarding, alighting, center, route.steps, busPositions]
   );
 
   return (
@@ -175,8 +233,16 @@ export function RouteMapScreen({ navigation, route: navRoute }: Props) {
           </Text>
         </View>
         <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}>
-          {lineStops.length > 0 ? `${lineStops.length} durak` : 'Hat güzergahı'} · Tahmini {route.estimatedDuration} dk
+          {transitStep?.intermediateStops ? `${transitStep.intermediateStops.length + 2} durak` : 'Hat güzergahı'} · Tahmini {route.estimatedDuration} dk
         </Text>
+        {(liveSunAnalysis ?? route.sunAnalysis) && (
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>
+            {(liveSunAnalysis ?? route.sunAnalysis)!.recommendedSide === 'left'
+              ? '☀️ Sağ taraf güneşli — sol tarafta otur'
+              : '☀️ Sol taraf güneşli — sağ tarafta otur'}
+            {liveSunAnalysis ? ' (canlı)' : ''}
+          </Text>
+        )}
       </View>
     </SafeAreaView>
   );

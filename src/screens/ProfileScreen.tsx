@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { View, StyleSheet, ScrollView, Alert } from 'react-native';
 import { Text, Surface, useTheme, Avatar, Button, Divider, List, Switch, ProgressBar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -8,6 +8,7 @@ import { useAppStore } from '../store/useAppStore';
 import { NotificationSettings } from '../components/profile/NotificationSettings';
 import { getUserPoints } from '../services/firebase/firestore';
 import { computeBadges, nextBadge } from '../services/gamification/badgeService';
+import { checkIsAdmin } from '../services/firebase/adminService';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
@@ -17,13 +18,16 @@ export function ProfileScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, setUser, isDarkMode, toggleDarkMode } = useAppStore();
   const [points, setPoints] = React.useState(user?.contributionPoints ?? 0);
+  const [isAdmin, setIsAdmin] = React.useState(false);
 
   React.useEffect(() => {
     if (!user || user.isGuest) {
       setPoints(0);
+      setIsAdmin(false);
       return;
     }
     getUserPoints(user.uid).then(setPoints).catch(() => {});
+    checkIsAdmin(user.email).then(setIsAdmin).catch(() => {});
   }, [user?.uid]);
 
   const badges = computeBadges(points);
@@ -151,7 +155,11 @@ export function ProfileScreen() {
                 color={theme.colors.onSurfaceVariant}
               />
             )}
-            onPress={() => {}}
+            onPress={() => Alert.alert(
+              'Gizlilik Politikası',
+              'Yolbul uygulaması, hizmetlerin iyileştirilmesi amacıyla anonim kullanım verisi toplar. Kişisel verileriniz (ad, e-posta) Firebase Authentication ile güvenli şekilde saklanır ve üçüncü taraflarla paylaşılmaz. Konum verisi yalnızca size yakın durakları bulmak için anlık olarak kullanılır, kayıt edilmez.\n\nSorularınız için: yolbul@support.com',
+              [{ text: 'Tamam' }]
+            )}
           />
           <Divider />
           <List.Item
@@ -172,7 +180,11 @@ export function ProfileScreen() {
                 color={theme.colors.onSurfaceVariant}
               />
             )}
-            onPress={() => {}}
+            onPress={() => Alert.alert(
+              'Yolbul Hakkında',
+              'Yolbul v1.0\n\nİzmir toplu taşıma rehberiniz. ESHOT hatları, sefer saatleri, rota planlama ve topluluk uyarılarıyla her yolculuğunuzu kolaylaştırır.\n\nGeliştirici: @ibrahim1811\nVersiyon: 1.0.0',
+              [{ text: 'Tamam' }]
+            )}
           />
           <Divider />
           <List.Item
@@ -194,6 +206,19 @@ export function ProfileScreen() {
         </Surface>
 
         <NotificationSettings />
+
+        {isAdmin && (
+          <Button
+            mode="contained-tonal"
+            icon="shield-crown"
+            onPress={() => navigation.navigate('AdminPanel')}
+            style={styles.adminBtn}
+            contentStyle={styles.adminBtnContent}
+            labelStyle={styles.adminBtnLabel}
+          >
+            Admin Paneli
+          </Button>
+        )}
 
         <Button
           mode="outlined"
@@ -245,6 +270,9 @@ const styles = StyleSheet.create({
   progressSection: { marginTop: 8, gap: 6 },
   progressLabel: { fontSize: 12 },
   progressBar: { height: 6, borderRadius: 3 },
+  adminBtn: { borderRadius: 12 },
+  adminBtnContent: { height: 52 },
+  adminBtnLabel: { fontSize: 15, fontWeight: '600' },
   signOutBtn: {
     borderRadius: 12,
     borderColor: '#D93025',

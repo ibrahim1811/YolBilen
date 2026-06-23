@@ -1,0 +1,176 @@
+import React, { useCallback, useState } from 'react';
+import { View, StyleSheet, FlatList, RefreshControl, TextInput, TouchableOpacity, ScrollView } from 'react-native';
+import { Text, Surface, useTheme, Appbar, Button } from 'react-native-paper';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { getActiveAlerts, deleteAlert, postAlert, ALERT_LABELS, ALERT_ICONS, ALERT_EXPIRY_MINS } from '../services/firebase/alertService';
+import { useAppStore } from '../store/useAppStore';
+import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import type { RootStackParamList, CommunityAlert } from '../types';
+
+type Props = NativeStackScreenProps<RootStackParamList, 'AdminPanel'>;
+
+export function AdminPanelScreen({ navigation }: Props) {
+  const theme = useTheme();
+  const user = useAppStore(s => s.user);
+  const [alerts, setAlerts] = useState<CommunityAlert[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [newLineNumber, setNewLineNumber] = useState('');
+  const [newType, setNewType] = useState<CommunityAlert['type']>('crowded');
+  const [posting, setPosting] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await getActiveAlerts();
+      setAlerts(data);
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }
+
+  async function handlePost() {
+    if (!newLineNumber.trim() || !user) return;
+    setPosting(true);
+    try {
+      const now = new Date();
+      await postAlert({
+        userId: user.uid,
+        lineNumber: newLineNumber.trim(),
+        type: newType,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + ALERT_EXPIRY_MINS[newType] * 60000),
+      });
+      setNewLineNumber('');
+      await load();
+    } catch {}
+    setPosting(false);
+  }
+
+  async function handleDelete(id: string) {
+    setDeleting(id);
+    try {
+      await deleteAlert(id);
+      setAlerts(prev => prev.filter(a => a.id !== id));
+    } catch {}
+    setDeleting(null);
+  }
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <Appbar.Header style={{ backgroundColor: theme.colors.background }} elevated={false}>
+        <Appbar.BackAction onPress={() => navigation.goBack()} />
+        <Appbar.Content title="Admin Paneli" titleStyle={styles.headerTitle} />
+      </Appbar.Header>
+
+      <FlatList
+        data={alerts}
+        keyExtractor={a => a.id!}
+        contentContainerStyle={styles.list}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
+        ListEmptyComponent={
+          !loading ? (
+            <View style={styles.empty}>
+              <MaterialCommunityIcons name="shield-check" size={48} color={theme.colors.onSurfaceVariant} />
+              <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>Aktif uyarı yok</Text>
+            </View>
+          ) : null
+        }
+        ListHeaderComponent={
+          <View>
+            <Surface style={[styles.createCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Yeni Uyarı Yayınla</Text>
+              <TextInput
+                placeholder="Hat numarası (örn: 148)"
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                value={newLineNumber}
+                onChangeText={setNewLineNumber}
+                keyboardType="numeric"
+                style={[styles.lineInput, { color: theme.colors.onSurface, borderColor: theme.colors.outline }]}
+              />
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeRow}>
+                {(Object.keys(ALERT_LABELS) as CommunityAlert['type'][]).map(t => (
+                  <TouchableOpacity
+                    key={t}
+                    onPress={() => setNewType(t)}
+                    style={[styles.typeChip, { backgroundColor: newType === t ? theme.colors.primary : theme.colors.surfaceVariant }]}
+                  >
+                    <Text style={{ color: newType === t ? '#FFF' : theme.colors.onSurface, fontSize: 12 }}>
+                      {ALERT_LABELS[t]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              <Button mode="contained" onPress={handlePost} loading={posting} disabled={!newLineNumber.trim() || posting} style={{ borderRadius: 10 }}>
+                Yayınla
+              </Button>
+            </Surface>
+            <View style={[styles.section, { marginTop: 8 }]}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Aktif Topluluk Uyarıları</Text>
+              <Text style={[styles.sectionSub, { color: theme.colors.onSurfaceVariant }]}>
+                {alerts.length} uyarı · Sil butonuyla kaldırabilirsin
+              </Text>
+            </View>
+          </View>
+        }
+        renderItem={({ item }) => (
+          <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
+            <View style={styles.cardRow}>
+              <MaterialCommunityIcons
+                name={ALERT_ICONS[item.type] as any}
+                size={22}
+                color="#D93025"
+              />
+              <View style={styles.cardInfo}>
+                <Text style={[styles.cardTitle, { color: theme.colors.onSurface }]}>
+                  Hat {item.lineNumber} — {ALERT_LABELS[item.type]}
+                </Text>
+                <Text style={[styles.cardSub, { color: theme.colors.onSurfaceVariant }]}>
+                  {Math.max(0, Math.round((item.expiresAt.getTime() - Date.now()) / 60000))} dk içinde sona erer · {item.upvotes} oy
+                </Text>
+              </View>
+              <Button
+                mode="text"
+                compact
+                textColor="#D93025"
+                loading={deleting === item.id}
+                disabled={deleting === item.id}
+                onPress={() => handleDelete(item.id!)}
+              >
+                Sil
+              </Button>
+            </View>
+          </Surface>
+        )}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  headerTitle: { fontSize: 18, fontWeight: '700' },
+  list: { padding: 16, gap: 10, paddingBottom: 40 },
+  section: { gap: 4, marginBottom: 4 },
+  sectionTitle: { fontSize: 18, fontWeight: '700' },
+  sectionSub: { fontSize: 13 },
+  createCard: { borderRadius: 14, padding: 16, gap: 12, marginBottom: 4 },
+  lineInput: { borderWidth: 1, borderRadius: 10, padding: 10, fontSize: 15 },
+  typeRow: { flexGrow: 0 },
+  typeChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginRight: 8 },
+  card: { borderRadius: 14, padding: 14 },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  cardInfo: { flex: 1, gap: 2 },
+  cardTitle: { fontSize: 14, fontWeight: '600' },
+  cardSub: { fontSize: 12 },
+  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 80 },
+  emptyText: { fontSize: 15 },
+});

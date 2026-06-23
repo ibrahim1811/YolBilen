@@ -18,6 +18,8 @@ import { useAppStore } from '../store/useAppStore';
 import { useFavorites } from '../hooks/useFavorites';
 import { useWeather } from '../hooks/useWeather';
 import { getUserJourneys, detectRoutine } from '../services/firebase/journeyService';
+import { getActiveAlerts, ALERT_LABELS, ALERT_ICONS } from '../services/firebase/alertService';
+import type { CommunityAlert } from '../types';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, FavoriteType, JourneyRecord } from '../types';
@@ -35,6 +37,7 @@ export function HomeScreen() {
   const [sunGps, setSunGps] = useState<{ lat: number; lng: number } | null>(null);
   const weather = useWeather();
   const [routine, setRoutine] = useState<JourneyRecord | null>(null);
+  const [crowdAlerts, setCrowdAlerts] = useState<CommunityAlert[]>([]);
   const h = new Date().getHours();
   const isNight = h >= 22 || h < 6;
 
@@ -73,6 +76,10 @@ export function HomeScreen() {
       .then(journeys => setRoutine(detectRoutine(journeys)))
       .catch(() => {});
   }, [user?.uid]);
+
+  useEffect(() => {
+    getActiveAlerts().then(a => setCrowdAlerts(a.slice(0, 3))).catch(() => {});
+  }, []);
 
   const disabledTypes = favoriteLocations
     .filter((l) => l.type !== 'custom')
@@ -251,6 +258,24 @@ export function HomeScreen() {
           </Surface>
         )}
 
+        {/* Aktif Uyarılar */}
+        {crowdAlerts.length > 0 && (
+          <Surface style={[styles.alertsCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
+            <View style={styles.alertsHeader}>
+              <MaterialCommunityIcons name="alert-circle" size={18} color="#D93025" />
+              <Text style={[styles.alertsTitle, { color: theme.colors.onSurface }]}>Aktif Uyarılar</Text>
+            </View>
+            {crowdAlerts.map(a => (
+              <View key={a.id} style={styles.alertRow}>
+                <MaterialCommunityIcons name={ALERT_ICONS[a.type] as any} size={16} color="#D93025" />
+                <Text style={[styles.alertText, { color: theme.colors.onSurfaceVariant }]}>
+                  Hat {a.lineNumber} — {ALERT_LABELS[a.type]}
+                </Text>
+              </View>
+            ))}
+          </Surface>
+        )}
+
         {/* Sun Info Banner */}
         <TouchableOpacity
           activeOpacity={0.75}
@@ -357,4 +382,9 @@ const styles = StyleSheet.create({
   routineText: { flex: 1, gap: 2 },
   routineTitle: { fontSize: 14, fontWeight: '700' },
   routineSub: { fontSize: 12 },
+  alertsCard: { borderRadius: 16, padding: 14, gap: 10 },
+  alertsHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  alertsTitle: { fontSize: 14, fontWeight: '700' },
+  alertRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  alertText: { fontSize: 13 },
 });

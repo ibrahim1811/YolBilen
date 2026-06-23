@@ -167,10 +167,12 @@ export function RouteSearchScreen({ navigation }: Props) {
           </View>
         )}
         ListEmptyComponent={
-          <View style={styles.empty}>
-            <MaterialCommunityIcons name="bus-alert" size={48} color={theme.colors.onSurfaceVariant} />
-            <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>Rota bulunamadı</Text>
-          </View>
+          !isLoading ? (
+            <View style={styles.empty}>
+              <MaterialCommunityIcons name="bus-alert" size={48} color={theme.colors.onSurfaceVariant} />
+              <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>Rota bulunamadı</Text>
+            </View>
+          ) : null
         }
       />
     </SafeAreaView>

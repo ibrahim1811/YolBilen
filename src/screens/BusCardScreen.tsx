@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, Appbar, Surface, ProgressBar, useTheme, ActivityIndicator } from 'react-native-paper';
+import { Text, Appbar, Surface, ProgressBar, useTheme, ActivityIndicator, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, BusCard } from '../types';
 import { getBusCard } from '../services/firebase/busCardService';
 import { trackBusCardOpen } from '../services/telemetry/telemetryService';
+import { useAppStore } from '../store/useAppStore';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'BusCard'>;
 
@@ -26,6 +27,7 @@ export function BusCardScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const { plate } = route.params;
   const [card, setCard] = useState<BusCard | null | 'loading'>('loading');
+  const setPendingFeedbackPlate = useAppStore(s => s.setPendingFeedbackPlate);
 
   useEffect(() => {
     trackBusCardOpen(plate);
@@ -51,6 +53,16 @@ export function BusCardScreen({ navigation, route }: Props) {
             <Text style={{ color: theme.colors.onSurfaceVariant, marginTop: 8, textAlign: 'center' }}>
               Bu araç için henüz değerlendirme yok.{'\n'}İlk sen değerlendir!
             </Text>
+            <Button
+              mode="contained"
+              style={{ marginTop: 16, borderRadius: 10 }}
+              onPress={() => {
+                setPendingFeedbackPlate(plate);
+                navigation.navigate('Main' as any);
+              }}
+            >
+              Değerlendir
+            </Button>
           </Surface>
         ) : (
           <>

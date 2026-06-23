@@ -27,19 +27,23 @@ export async function submitFeedback(feedback: Omit<Feedback, 'id'>): Promise<vo
     timestamp: Timestamp.fromDate(feedback.timestamp),
   });
 
-  await setDoc(doc(db, 'line_stats', feedback.lineNumber), {
-    lineNumber: feedback.lineNumber,
-    totalFeedbacks: increment(1),
-    [`ac_${feedback.ac}`]: increment(1),
-    [`comfort_${feedback.comfort}`]: increment(1),
-    [`crowd_${feedback.crowd}`]: increment(1),
-    [`temp_${feedback.temperature}`]: increment(1),
-    lastUpdated: Timestamp.now(),
-  }, { merge: true });
+  try {
+    await setDoc(doc(db, 'line_stats', feedback.lineNumber), {
+      lineNumber: feedback.lineNumber,
+      totalFeedbacks: increment(1),
+      [`ac_${feedback.ac}`]: increment(1),
+      [`comfort_${feedback.comfort}`]: increment(1),
+      [`crowd_${feedback.crowd}`]: increment(1),
+      [`temp_${feedback.temperature}`]: increment(1),
+      lastUpdated: Timestamp.now(),
+    }, { merge: true });
+  } catch {}
 
-  await setDoc(doc(db, 'users', feedback.userId), {
-    contributionPoints: increment(10),
-  }, { merge: true });
+  try {
+    await setDoc(doc(db, 'users', feedback.userId), {
+      contributionPoints: increment(10),
+    }, { merge: true });
+  } catch {}
 
   void updateBusCardFromFeedback(feedback as Feedback);
 }

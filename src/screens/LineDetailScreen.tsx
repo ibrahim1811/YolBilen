@@ -161,37 +161,6 @@ export function LineDetailScreen({ navigation, route }: Props) {
           </View>
         </Surface>
 
-        {/* Durak Listesi */}
-        {lineStops.length > 0 && (
-          <Surface style={[styles.stopsCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-              Duraklar ({lineStops.length})
-            </Text>
-            {lineStops.map((stop, i) => {
-              const isFirst = i === 0;
-              const isLast = i === lineStops.length - 1;
-              return (
-                <View key={stop.id} style={styles.stopRow}>
-                  <View style={styles.stopTimeline}>
-                    <View style={[
-                      styles.stopDot,
-                      { backgroundColor: isFirst || isLast ? theme.colors.primary : theme.colors.outline }
-                    ]} />
-                    {!isLast && <View style={[styles.stopLine, { backgroundColor: theme.colors.outlineVariant }]} />}
-                  </View>
-                  <Text style={[
-                    styles.stopRowName,
-                    { color: isFirst || isLast ? theme.colors.onSurface : theme.colors.onSurfaceVariant,
-                      fontWeight: isFirst || isLast ? '700' : '400' }
-                  ]}>
-                    {stop.name}
-                  </Text>
-                </View>
-              );
-            })}
-          </Surface>
-        )}
-
         {/* Sefer Saatleri */}
         <Surface style={[styles.scheduleCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
           <View style={styles.scheduleHeader}>
@@ -225,42 +194,83 @@ export function LineDetailScreen({ navigation, route }: Props) {
             </Text>
           ) : schedule.dir0.length === 0 && schedule.dir1.length === 0 ? (
             <Text style={[styles.scheduleNote, { color: theme.colors.onSurfaceVariant }]}>
-              Bu gün için sefer verisi yok.
+              {isRing ? 'Ring hat — saatler gerçek zamanlı değişir, veri mevcut değil.' : 'Bu gün için sefer verisi yok.'}
             </Text>
-          ) : (
-            <>
-              {schedule.dir0.length > 0 && (
-                <>
-                  <Text style={[styles.dirLabel, { color: theme.colors.onSurface }]}>
-                    {fromStop} → {toStop || fromStop}
-                  </Text>
-                  <View style={styles.timeGrid}>
-                    {schedule.dir0.map(t => (
-                      <View key={t} style={[styles.timeBadge, { backgroundColor: theme.colors.primaryContainer }]}>
-                        <Text style={[styles.timeText, { color: theme.colors.primary }]}>{minsToHHMM(t)}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </>
-              )}
-
-              {schedule.dir1.length > 0 && (
-                <>
-                  <Text style={[styles.dirLabel, { color: theme.colors.onSurface, marginTop: 12 }]}>
-                    {toStop || fromStop} → {fromStop}
-                  </Text>
-                  <View style={styles.timeGrid}>
-                    {schedule.dir1.map(t => (
-                      <View key={t} style={[styles.timeBadge, { backgroundColor: theme.colors.secondaryContainer }]}>
-                        <Text style={[styles.timeText, { color: theme.colors.secondary }]}>{minsToHHMM(t)}</Text>
-                      </View>
-                    ))}
-                  </View>
-                </>
-              )}
-            </>
-          )}
+          ) : (() => {
+            const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+            const nextDir0 = schedule.dir0.find(t => t >= nowMins) ?? schedule.dir0[0];
+            const nextDir1 = schedule.dir1.find(t => t >= nowMins) ?? schedule.dir1[0];
+            return (
+              <>
+                {schedule.dir0.length > 0 && (
+                  <>
+                    <Text style={[styles.dirLabel, { color: theme.colors.onSurface }]}>
+                      {fromStop} → {toStop || fromStop}
+                    </Text>
+                    <View style={styles.timeGrid}>
+                      {schedule.dir0.map(t => {
+                        const isNext = t === nextDir0;
+                        return (
+                          <View key={t} style={[styles.timeBadge, { backgroundColor: isNext ? theme.colors.primary : theme.colors.primaryContainer }]}>
+                            <Text style={[styles.timeText, { color: isNext ? '#FFF' : theme.colors.primary, fontWeight: isNext ? '800' : '400' }]}>{minsToHHMM(t)}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
+                {schedule.dir1.length > 0 && (
+                  <>
+                    <Text style={[styles.dirLabel, { color: theme.colors.onSurface, marginTop: 12 }]}>
+                      {toStop || fromStop} → {fromStop}
+                    </Text>
+                    <View style={styles.timeGrid}>
+                      {schedule.dir1.map(t => {
+                        const isNext = t === nextDir1;
+                        return (
+                          <View key={t} style={[styles.timeBadge, { backgroundColor: isNext ? theme.colors.secondary : theme.colors.secondaryContainer }]}>
+                            <Text style={[styles.timeText, { color: isNext ? '#FFF' : theme.colors.secondary, fontWeight: isNext ? '800' : '400' }]}>{minsToHHMM(t)}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </>
+                )}
+              </>
+            );
+          })()}
         </Surface>
+
+        {/* Durak Listesi */}
+        {lineStops.length > 0 && (
+          <Surface style={[styles.stopsCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
+              Duraklar ({lineStops.length})
+            </Text>
+            {lineStops.map((stop, i) => {
+              const isFirst = i === 0;
+              const isLast = i === lineStops.length - 1;
+              return (
+                <View key={stop.id} style={styles.stopRow}>
+                  <View style={styles.stopTimeline}>
+                    <View style={[
+                      styles.stopDot,
+                      { backgroundColor: isFirst || isLast ? theme.colors.primary : theme.colors.outline }
+                    ]} />
+                    {!isLast && <View style={[styles.stopLine, { backgroundColor: theme.colors.outlineVariant }]} />}
+                  </View>
+                  <Text style={[
+                    styles.stopRowName,
+                    { color: isFirst || isLast ? theme.colors.onSurface : theme.colors.onSurfaceVariant,
+                      fontWeight: isFirst || isLast ? '700' : '400' }
+                  ]}>
+                    {stop.name}
+                  </Text>
+                </View>
+              );
+            })}
+          </Surface>
+        )}
 
         {/* Konfor Skoru */}
         {score ? (

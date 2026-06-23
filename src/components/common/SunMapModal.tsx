@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { Portal, Modal, Text, IconButton, useTheme } from 'react-native-paper';
 import { WebView } from 'react-native-webview';
@@ -119,7 +119,7 @@ const buildHtml = (lat: number, lng: number, azimuth: number) => `<!DOCTYPE html
 
 export function SunMapModal({ visible, lat, lng, azimuth, altitude, onDismiss }: Props) {
   const theme = useTheme();
-  const webviewReady = useRef(false);
+  const [webviewReady, setWebviewReady] = React.useState(false);
   const below = altitude <= 0;
 
   return (
@@ -131,7 +131,7 @@ export function SunMapModal({ visible, lat, lng, azimuth, altitude, onDismiss }:
         </View>
 
         <View style={styles.mapWrap}>
-          {!webviewReady.current && (
+          {!webviewReady && (
             <View style={styles.loader}>
               <ActivityIndicator size="large" color={theme.colors.primary} />
             </View>
@@ -139,7 +139,7 @@ export function SunMapModal({ visible, lat, lng, azimuth, altitude, onDismiss }:
           <WebView
             style={styles.map}
             source={{ html: buildHtml(lat, lng, azimuth) }}
-            onLoad={() => { webviewReady.current = true; }}
+            onLoad={() => setWebviewReady(true)}
             javaScriptEnabled
             scrollEnabled={false}
           />

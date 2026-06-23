@@ -46,6 +46,8 @@ export function CommunityScreen() {
   const theme = useTheme();
   const user = useAppStore((s) => s.user);
   const setUser = useAppStore((s) => s.setUser);
+  const pendingFeedbackPlate = useAppStore((s) => s.pendingFeedbackPlate);
+  const setPendingFeedbackPlate = useAppStore((s) => s.setPendingFeedbackPlate);
 
   const [showLineModal, setShowLineModal] = useState(false);
   const [selectedLine, setSelectedLine] = useState<{ number: string; name: string } | null>(null);
@@ -81,6 +83,13 @@ export function CommunityScreen() {
   }, []);
 
   useEffect(() => { loadRecent(); }, []);
+
+  useEffect(() => {
+    if (pendingFeedbackPlate) {
+      setPlateInput(pendingFeedbackPlate);
+      setPendingFeedbackPlate(null);
+    }
+  }, [pendingFeedbackPlate]);
 
   useEffect(() => {
     if (user && !user.isGuest) {

@@ -13,6 +13,7 @@ interface AppState {
   isLoading: boolean;
   favoriteLocations: FavoriteLocation[];
   favoriteLines: FavoriteLine[];
+  pendingFeedbackPlate: string | null;
 
   setUser: (user: User | null) => void;
   toggleDarkMode: () => void;
@@ -27,6 +28,7 @@ interface AppState {
   removeFavoriteLocation: (id: string) => void;
   addFavoriteLine: (line: FavoriteLine) => void;
   removeFavoriteLine: (id: string) => void;
+  setPendingFeedbackPlate: (plate: string | null) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -41,6 +43,7 @@ export const useAppStore = create<AppState>()(
       isLoading: false,
       favoriteLocations: [],
       favoriteLines: [],
+      pendingFeedbackPlate: null,
 
       setUser: (user) => set({ user }),
       toggleDarkMode: () => set((s) => ({ isDarkMode: !s.isDarkMode })),
@@ -59,6 +62,7 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ favoriteLines: [...s.favoriteLines, line] })),
       removeFavoriteLine: (id) =>
         set((s) => ({ favoriteLines: s.favoriteLines.filter((l) => l.id !== id) })),
+      setPendingFeedbackPlate: (plate) => set({ pendingFeedbackPlate: plate }),
     }),
     {
       name: 'yolbul-store',

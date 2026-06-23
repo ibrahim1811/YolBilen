@@ -14,6 +14,24 @@ let _routeStopSeqs: Record<string, string[]> | null = null;
 let _ringRoutes: Set<string> | null = null;
 let _shapes: Record<string, [number, number][]> | null = null;
 let _routeMeta: Record<string, { name: string }> | null = null;
+let _grid: Map<string, IzmirStop[]> | null = null;
+
+const GRID_SIZE = 0.02;
+
+function gridKey(lat: number, lon: number): string {
+  return `${Math.floor(lat / GRID_SIZE)},${Math.floor(lon / GRID_SIZE)}`;
+}
+
+function getGrid(): Map<string, IzmirStop[]> {
+  if (_grid) return _grid;
+  _grid = new Map();
+  for (const stop of getStops()) {
+    const key = gridKey(stop.lat, stop.lon);
+    if (!_grid.has(key)) _grid.set(key, []);
+    _grid.get(key)!.push(stop);
+  }
+  return _grid;
+}
 
 function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const R = 6371;
@@ -74,13 +92,24 @@ export function getLinesNearOrigin(
   origin: { lat: number; lon: number },
   radiusKm = 1.0
 ): string[] {
+  const grid = getGrid();
   const srd = getStopRouteDirs();
   const seen = new Set<string>();
   const result: string[] = [];
-  for (const stop of getStops()) {
-    if (haversineKm(origin, stop) > radiusKm) continue;
-    for (const { lineNum } of srd[stop.id] ?? []) {
-      if (!seen.has(lineNum)) { seen.add(lineNum); result.push(lineNum); }
+  const cellRadius = Math.ceil(radiusKm / (GRID_SIZE * 111)) + 1;
+  const centerLat = Math.floor(origin.lat / GRID_SIZE);
+  const centerLon = Math.floor(origin.lon / GRID_SIZE);
+  for (let dlat = -cellRadius; dlat <= cellRadius; dlat++) {
+    for (let dlon = -cellRadius; dlon <= cellRadius; dlon++) {
+      const stops = grid.get(`${centerLat + dlat},${centerLon + dlon}`) ?? [];
+      for (const stop of stops) {
+        const dLatKm = (stop.lat - origin.lat) * 111;
+        const dLonKm = (stop.lon - origin.lon) * 111 * Math.cos(origin.lat * Math.PI / 180);
+        if (Math.sqrt(dLatKm * dLatKm + dLonKm * dLonKm) > radiusKm) continue;
+        for (const { lineNum } of srd[stop.id] ?? []) {
+          if (!seen.has(lineNum)) { seen.add(lineNum); result.push(lineNum); }
+        }
+      }
     }
   }
   return result;

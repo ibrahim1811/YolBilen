@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { RouteCard } from '../components/route/RouteCard';
 import { SkeletonCard } from '../components/common/SkeletonCard';
+import { ErrorView } from '../components/common/ErrorView';
 import { useAppStore } from '../store/useAppStore';
 import { findRoutes, sortRoutes } from '../services/gtfs/routingService';
 import { saveRouteCache, loadRouteCache } from '../services/cache/routeCache';
@@ -42,6 +43,7 @@ export function RouteSearchScreen({ navigation }: Props) {
   const { origin, destination, routes, setRoutes, setSelectedRoute, isLoading, setLoading } = useAppStore();
   const [filterMode, setFilterMode] = useState<RouteFilterMode>('fastest');
   const [notifiedRouteId, setNotifiedRouteId] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const h = new Date().getHours();
   const isNight = h >= 22 || h < 6;
 
@@ -51,6 +53,7 @@ export function RouteSearchScreen({ navigation }: Props) {
     if (!origin || !destination) return;
     let cancelled = false;
     setLoading(true);
+    setSearchError(null);
     findRoutes(origin, destination)
       .then(async r => {
         if (cancelled) return;
@@ -60,7 +63,12 @@ export function RouteSearchScreen({ navigation }: Props) {
       .catch(async () => {
         if (cancelled) return;
         const cached = await loadRouteCache(origin, destination);
-        setRoutes(cached ?? []);
+        if (cached) {
+          setRoutes(cached);
+        } else {
+          setRoutes([]);
+          setSearchError('Rotalar yüklenemedi. İnternet bağlantınızı kontrol edin.');
+        }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -114,9 +122,23 @@ export function RouteSearchScreen({ navigation }: Props) {
           <SkeletonCard lines={3} height={100} />
           <SkeletonCard lines={3} height={100} />
         </View>
+      ) : searchError && sorted.length === 0 ? (
+        <ErrorView
+          message={searchError}
+          onRetry={() => {
+            if (origin && destination) {
+              setSearchError(null);
+              setLoading(true);
+              findRoutes(origin, destination)
+                .then(r => { if (r.length > 0) void saveRouteCache(origin, destination, r); setRoutes(r); })
+                .catch(() => setSearchError('Rotalar yüklenemedi. İnternet bağlantınızı kontrol edin.'))
+                .finally(() => setLoading(false));
+            }
+          }}
+        />
       ) : null}
       <FlatList
-        data={isLoading ? [] : sorted}
+        data={isLoading || (searchError !== null && sorted.length === 0) ? [] : sorted}
         keyExtractor={r => r.id}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (

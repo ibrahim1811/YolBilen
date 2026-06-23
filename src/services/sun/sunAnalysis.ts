@@ -59,6 +59,79 @@ export function analyzeSunExposure(segment: RouteSegment): SunAnalysis {
   };
 }
 
+// Gerçek güzergah boyunca ağırlıklı ortalama yön ile güneş analizi
+export function analyzeSunExposureAlongRoute(
+  waypoints: Array<{ latitude: number; longitude: number }>,
+  departureTime: Date,
+  avgSpeedKmh = 22
+): SunAnalysis {
+  if (waypoints.length < 2) return getMockSunAnalysis();
+
+  function segDistKm(
+    a: { latitude: number; longitude: number },
+    b: { latitude: number; longitude: number }
+  ): number {
+    const R = 6371;
+    const dLat = ((b.latitude - a.latitude) * Math.PI) / 180;
+    const dLon = ((b.longitude - a.longitude) * Math.PI) / 180;
+    const s =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos((a.latitude * Math.PI) / 180) *
+      Math.cos((b.latitude * Math.PI) / 180) *
+      Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.asin(Math.sqrt(s));
+  }
+
+  let rightWeightedSum = 0;
+  let totalWeight = 0;
+  let elapsedHours = 0;
+
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const a = waypoints[i];
+    const b = waypoints[i + 1];
+    const distKm = segDistKm(a, b);
+    if (distKm < 0.001) continue;
+
+    const segTime = new Date(departureTime.getTime() + elapsedHours * 3600000);
+    elapsedHours += distKm / avgSpeedKmh;
+
+    const midLat = (a.latitude + b.latitude) / 2;
+    const midLon = (a.longitude + b.longitude) / 2;
+    const sunPos = SunCalc.getPosition(segTime, midLat, midLon);
+
+    if (sunPos.altitude <= 0) continue;
+
+    const sunAzimuth = ((sunPos.azimuth * 180) / Math.PI + 180) % 360;
+    const bearing = getBearing(
+      { name: '', latitude: a.latitude, longitude: a.longitude },
+      { name: '', latitude: b.latitude, longitude: b.longitude }
+    );
+    const { side, intensity } = getSunRelativeAngle(sunAzimuth, bearing);
+
+    const weight = distKm * Math.sin(sunPos.altitude);
+    const rightPct = side === 'right' ? 50 + intensity * 50 : 50 - intensity * 50;
+
+    rightWeightedSum += rightPct * weight;
+    totalWeight += weight;
+  }
+
+  if (totalWeight === 0) return getMockSunAnalysis();
+
+  const rightPct = Math.round(rightWeightedSum / totalWeight);
+  const leftPct = 100 - rightPct;
+  const recommendedSide = rightPct > leftPct ? 'left' : 'right';
+
+  return {
+    recommendedSide,
+    leftPercentage: leftPct,
+    rightPercentage: rightPct,
+    description:
+      recommendedSide === 'left'
+        ? '☀️ Sağ taraf daha fazla güneş alıyor.\n🌤️ Sol taraf daha serin.'
+        : '☀️ Sol taraf daha fazla güneş alıyor.\n🌤️ Sağ taraf daha serin.',
+  };
+}
+
 export function getMockSunAnalysis(): SunAnalysis {
   return analyzeSunExposure({
     from: { name: 'Başlangıç', latitude: 38.4192, longitude: 27.1287 },

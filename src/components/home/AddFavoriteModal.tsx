@@ -1,25 +1,15 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Text, Portal, Modal, TextInput, Button, useTheme, Divider } from 'react-native-paper';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { Text, Portal, Modal, TextInput, Button, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { FavoriteType, Location } from '../../types';
+import { MapPickerModal } from '../common/MapPickerModal';
 
 const LOCATION_TYPES: { type: FavoriteType; icon: string; label: string; color: string }[] = [
   { type: 'home', icon: 'home', label: 'Ev', color: '#34A853' },
   { type: 'work', icon: 'briefcase', label: 'İş', color: '#1A73E8' },
   { type: 'school', icon: 'school', label: 'Okul', color: '#FBBC04' },
   { type: 'custom', icon: 'map-marker', label: 'Diğer', color: '#9C27B0' },
-];
-
-const MOCK_SUGGESTIONS: Location[] = [
-  { name: 'Konak', latitude: 38.4189, longitude: 27.1287 },
-  { name: 'Alsancak', latitude: 38.4382, longitude: 27.1425 },
-  { name: 'Bornova', latitude: 38.4614, longitude: 27.2194 },
-  { name: 'Karşıyaka', latitude: 38.4567, longitude: 27.1108 },
-  { name: 'Buca', latitude: 38.3822, longitude: 27.1794 },
-  { name: 'Çiğli', latitude: 38.5014, longitude: 27.0736 },
-  { name: 'Balçova', latitude: 38.3939, longitude: 27.0625 },
-  { name: 'Narlıdere', latitude: 38.3908, longitude: 26.9997 },
 ];
 
 interface Props {
@@ -34,12 +24,8 @@ export function AddFavoriteModal({ visible, onDismiss, onAdd, disabledTypes = []
   const [step, setStep] = useState<'type' | 'location'>('type');
   const [selectedType, setSelectedType] = useState<FavoriteType | null>(null);
   const [customLabel, setCustomLabel] = useState('');
-  const [search, setSearch] = useState('');
+  const [showMap, setShowMap] = useState(false);
   const [loading, setLoading] = useState(false);
-
-  const filtered = MOCK_SUGGESTIONS.filter((s) =>
-    s.name.toLowerCase().includes(search.toLowerCase())
-  );
 
   function handleTypeSelect(type: FavoriteType, defaultLabel: string) {
     setSelectedType(type);
@@ -62,7 +48,7 @@ export function AddFavoriteModal({ visible, onDismiss, onAdd, disabledTypes = []
     setStep('type');
     setSelectedType(null);
     setCustomLabel('');
-    setSearch('');
+    setShowMap(false);
     onDismiss();
   }
 
@@ -139,36 +125,30 @@ export function AddFavoriteModal({ visible, onDismiss, onAdd, disabledTypes = []
               />
             )}
 
-            <TextInput
-              label="Konum ara..."
-              value={search}
-              onChangeText={setSearch}
-              mode="outlined"
-              left={<TextInput.Icon icon="magnify" />}
-              style={styles.searchInput}
-            />
+            <View style={styles.locationStep}>
+              <Button
+                mode="contained"
+                icon="map-marker"
+                onPress={() => setShowMap(true)}
+                loading={loading}
+                style={styles.mapBtn}
+              >
+                Haritadan Seç
+              </Button>
+            </View>
 
-            <Divider />
-            <ScrollView style={styles.suggestionList} showsVerticalScrollIndicator={false}>
-              {filtered.map((loc) => (
-                <TouchableOpacity
-                  key={loc.name}
-                  style={[styles.suggestion, { borderBottomColor: theme.colors.outline }]}
-                  onPress={() => handleLocationSelect(loc)}
-                  disabled={loading}
-                  activeOpacity={0.7}
-                >
-                  <MaterialCommunityIcons
-                    name="map-marker-outline"
-                    size={18}
-                    color={theme.colors.primary}
-                  />
-                  <Text style={[styles.suggestionText, { color: theme.colors.onSurface }]}>
-                    {loc.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+            <MapPickerModal
+              visible={showMap}
+              onDismiss={() => setShowMap(false)}
+              onSelect={async (lat, lng) => {
+                setShowMap(false);
+                await handleLocationSelect({
+                  name: customLabel || selectedType || 'Konum',
+                  latitude: lat,
+                  longitude: lng,
+                });
+              }}
+            />
           </>
         )}
       </Modal>
@@ -200,14 +180,6 @@ const styles = StyleSheet.create({
   backRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
   backBtn: { padding: 4 },
   labelInput: { marginBottom: 12, backgroundColor: 'transparent' },
-  searchInput: { marginBottom: 12, backgroundColor: 'transparent' },
-  suggestionList: { maxHeight: 280 },
-  suggestion: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  suggestionText: { fontSize: 15 },
+  locationStep: { alignItems: 'center', paddingVertical: 24 },
+  mapBtn: { width: '100%' },
 });

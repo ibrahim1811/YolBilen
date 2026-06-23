@@ -185,6 +185,7 @@ export interface CommunityAlert {
 export type RouteFilterMode = 'fastest' | 'comfortable' | 'cool' | 'least_transfers' | 'night_safe';
 
 export type RootStackParamList = {
+  Onboarding: undefined;
   Login: undefined;
   Register: undefined;
   Main: undefined;

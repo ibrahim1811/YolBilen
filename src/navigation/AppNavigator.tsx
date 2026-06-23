@@ -1,6 +1,8 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { OnboardingScreen } from '../screens/OnboardingScreen';
 import { LoginScreen } from '../screens/LoginScreen';
 import { RegisterScreen } from '../screens/RegisterScreen';
 import { RouteSearchScreen } from '../screens/RouteSearchScreen';
@@ -21,12 +23,23 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function AppNavigator() {
   const user = useAppStore((s) => s.user);
+  const [onboardingDone, setOnboardingDone] = React.useState<boolean | null>(null);
+
+  React.useEffect(() => {
+    AsyncStorage.getItem('onboarding_done').then(val => setOnboardingDone(!!val));
+  }, []);
+
+  if (onboardingDone === null) return null;
 
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{ headerShown: false }}
+        initialRouteName={user === null && !onboardingDone ? 'Onboarding' : user === null ? 'Login' : 'Main'}
+      >
         {user === null ? (
           <>
+            {!onboardingDone && <Stack.Screen name="Onboarding" component={OnboardingScreen} />}
             <Stack.Screen name="Login" component={LoginScreen} />
             <Stack.Screen name="Register" component={RegisterScreen} options={{ animation: 'slide_from_right' }} />
           </>

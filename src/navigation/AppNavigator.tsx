@@ -18,6 +18,7 @@ import { BusCardScreen } from '../screens/BusCardScreen';
 import { TabNavigator } from './TabNavigator';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
+import { warmupRouting } from '../services/background/warmupService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -27,6 +28,7 @@ export function AppNavigator() {
 
   React.useEffect(() => {
     AsyncStorage.getItem('onboarding_done').then(val => setOnboardingDone(!!val));
+    warmupRouting();
   }, []);
 
   if (onboardingDone === null) return null;

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { trackScreenView, trackStopOpen } from '../services/telemetry/telemetryService';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { Text, useTheme, Appbar, Surface, Chip, Button, Snackbar, Divider, ActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +20,8 @@ export function StopDetailScreen({ navigation, route }: Props) {
   const theme = useTheme();
   const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { stopId, stopName, latitude, longitude, lines } = route.params;
+
+  useEffect(() => { trackScreenView('StopDetail'); trackStopOpen(stopId); }, [stopId]);
 
   const { favoriteLocations, addLocation, removeLocation } = useFavorites();
   const [arrivals, setArrivals] = useState<StopArrival[]>([]);

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { trackScreenView, trackLineOpen } from '../services/telemetry/telemetryService';
 import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { Text, useTheme, Appbar, Surface, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -80,6 +81,8 @@ export function LineDetailScreen({ navigation, route }: Props) {
   const [rawSchedule, setRawSchedule] = useState<import('../services/firebase/scheduleService').LineSchedule>({});
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const lineStops = React.useMemo(() => orderedLineStops(lineNumber, fromStop, toStop), [lineNumber, fromStop, toStop]);
+
+  useEffect(() => { trackScreenView('LineDetail'); trackLineOpen(lineNumber); }, [lineNumber]);
 
   useEffect(() => {
     setScheduleLoading(true);

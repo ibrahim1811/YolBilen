@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { trackScreenView, trackRouteSearch } from '../services/telemetry/telemetryService';
 import { View, StyleSheet, FlatList, ScrollView } from 'react-native';
 import { Text, useTheme, Appbar, Chip } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -43,12 +44,17 @@ export function RouteSearchScreen({ navigation }: Props) {
   const h = new Date().getHours();
   const isNight = h >= 22 || h < 6;
 
+  useEffect(() => { trackScreenView('RouteSearch'); }, []);
+
   useEffect(() => {
     if (!origin || !destination) return;
+    let cancelled = false;
     setLoading(true);
-    try { setRoutes(findRoutes(origin, destination)); }
-    catch { setRoutes([]); }
-    finally { setLoading(false); }
+    findRoutes(origin, destination)
+      .then(r => { if (!cancelled) setRoutes(r); })
+      .catch(() => { if (!cancelled) setRoutes([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [origin, destination]);
 
   useEffect(() => () => { setLoading(false); }, []);
@@ -86,8 +92,9 @@ export function RouteSearchScreen({ navigation }: Props) {
             selected={filterMode === f.mode}
             onPress={() => setFilterMode(f.mode)}
             icon={f.icon}
-            style={styles.filterChip}
-            compact
+            style={[styles.filterChip, filterMode === f.mode && styles.filterChipSelected]}
+            selectedColor="#1A73E8"
+            showSelectedOverlay
           >
             {f.label}
           </Chip>
@@ -104,6 +111,7 @@ export function RouteSearchScreen({ navigation }: Props) {
               route={item}
               onPress={() => {
                 setSelectedRoute(item);
+                trackRouteSearch(origin?.name ?? '', destination?.name ?? '');
                 navigation.navigate('RouteResults', { origin: origin!, destination: destination! });
               }}
             />
@@ -141,7 +149,8 @@ const styles = StyleSheet.create({
   locationText: { fontSize: 14, fontWeight: '500', flex: 1 },
   arrow: { marginLeft: 4 },
   filterRow: { paddingHorizontal: 16, paddingBottom: 10, gap: 8 },
-  filterChip: { marginRight: 4 },
+  filterChip: { marginRight: 4, height: 36 },
+  filterChipSelected: { backgroundColor: '#E8F0FE' },
   list: { padding: 16, paddingTop: 4, gap: 4 },
   notifyRow: { paddingHorizontal: 4, paddingBottom: 10 },
   notifyChip: { alignSelf: 'flex-start' },

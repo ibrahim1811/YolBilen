@@ -7,6 +7,7 @@ import { LocationInput } from '../components/common/LocationInput';
 import { LocationPickerModal } from '../components/common/LocationPickerModal';
 import { SunMapModal } from '../components/common/SunMapModal';
 import SunCalc from 'suncalc';
+import { trackScreenView } from '../services/telemetry/telemetryService';
 import { FavoriteLocationCard, AddFavoriteCard } from '../components/home/FavoriteLocationCard';
 import { FavoriteLineCard } from '../components/home/FavoriteLineCard';
 import { AddFavoriteModal } from '../components/home/AddFavoriteModal';
@@ -36,6 +37,8 @@ export function HomeScreen() {
   const [routine, setRoutine] = useState<JourneyRecord | null>(null);
   const h = new Date().getHours();
   const isNight = h >= 22 || h < 6;
+
+  useEffect(() => { trackScreenView('HomeScreen'); }, []);
 
   useEffect(() => {
     if (origin !== null) return;

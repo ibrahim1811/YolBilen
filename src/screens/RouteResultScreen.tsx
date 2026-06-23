@@ -1,5 +1,6 @@
-import React from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useEffect } from 'react';
+import { trackScreenView } from '../services/telemetry/telemetryService';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, useTheme, Appbar, Surface, Divider, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -27,7 +28,7 @@ export function RouteResultScreen({ navigation }: Props) {
   const weather = useWeather();
 
   async function handleStartJourney() {
-    navigation.navigate('RouteMap', { route: selectedRoute! });
+    navigation.navigate('JourneyNavigation', { route: selectedRoute! });
     if (user && !user.isGuest && selectedRoute && origin && destination) {
       const now = new Date();
       const distKm = Math.round(
@@ -56,6 +57,8 @@ export function RouteResultScreen({ navigation }: Props) {
       }).catch(() => {});
     }
   }
+
+  useEffect(() => { trackScreenView('RouteResult'); }, []);
 
   React.useEffect(() => {
     if (selectedRoute) {
@@ -100,7 +103,7 @@ export function RouteResultScreen({ navigation }: Props) {
             <StatItem
               icon="bus-clock"
               label="Sonraki Otobüs"
-              value={`${selectedRoute.nextArrival} dk`}
+              value={selectedRoute.nextArrival >= 999 ? 'Yarın' : selectedRoute.nextArrival <= 1 ? 'Şimdi' : `${selectedRoute.nextArrival} dk`}
               color="#34A853"
             />
             <StatItem
@@ -229,7 +232,6 @@ function StatItem({ icon, label, value, color }: StatItemProps) {
 
 function RouteStepsCard({ steps }: { steps: RouteStep[] }) {
   const theme = useTheme();
-  const [expandedIndex, setExpandedIndex] = React.useState<number | null>(null);
 
   return (
     <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
@@ -255,11 +257,7 @@ function RouteStepsCard({ steps }: { steps: RouteStep[] }) {
             </View>
           ) : (
             <View>
-              <TouchableOpacity
-                style={styles.stepRow}
-                onPress={() => setExpandedIndex(expandedIndex === i ? null : i)}
-                activeOpacity={0.7}
-              >
+              <View style={styles.stepRow}>
                 <View style={[styles.stepIcon, { backgroundColor: theme.colors.primaryContainer }]}>
                   <MaterialCommunityIcons name="bus" size={18} color={theme.colors.primary} />
                 </View>
@@ -268,34 +266,23 @@ function RouteStepsCard({ steps }: { steps: RouteStep[] }) {
                     {step.departureTime && `${step.departureTime} — `}Hat {step.lineNumber}
                   </Text>
                   <Text style={[styles.stepSub, { color: theme.colors.onSurfaceVariant }]}>
-                    {step.boardStop?.name} → {step.alightStop?.name}
-                    {(step.intermediateStops?.length ?? 0) > 0 &&
-                      ` · ${step.intermediateStops!.length} ara durak`}
+                    {step.distanceMeters ? `${(step.distanceMeters / 1000).toFixed(1)} km` : ''}
                   </Text>
                 </View>
-                {(step.intermediateStops?.length ?? 0) > 0 && (
-                  <MaterialCommunityIcons
-                    name={expandedIndex === i ? 'chevron-up' : 'chevron-down'}
-                    size={20}
-                    color={theme.colors.onSurfaceVariant}
-                  />
-                )}
-              </TouchableOpacity>
-              {expandedIndex === i && (step.intermediateStops?.length ?? 0) > 0 && (
-                <View style={[styles.stopList, { borderLeftColor: theme.colors.primary }]}>
-                  <Text style={[styles.stopItem, { color: theme.colors.onSurface }]}>
-                    {step.boardStop?.name}
+              </View>
+              <View style={[styles.stopList, { borderLeftColor: theme.colors.primary }]}>
+                <Text style={[styles.stopItem, { color: theme.colors.onSurface, fontWeight: '600' }]}>
+                  {step.boardStop?.name}
+                </Text>
+                {(step.intermediateStops ?? []).map((s, j) => (
+                  <Text key={j} style={[styles.stopItem, { color: theme.colors.onSurfaceVariant }]}>
+                    {s.name}
                   </Text>
-                  {step.intermediateStops!.map((s, j) => (
-                    <Text key={j} style={[styles.stopItem, { color: theme.colors.onSurfaceVariant }]}>
-                      {s.name}
-                    </Text>
-                  ))}
-                  <Text style={[styles.stopItem, { color: theme.colors.onSurface }]}>
-                    {step.alightStop?.name}
-                  </Text>
-                </View>
-              )}
+                ))}
+                <Text style={[styles.stopItem, { color: theme.colors.onSurface, fontWeight: '600' }]}>
+                  {step.alightStop?.name}
+                </Text>
+              </View>
             </View>
           )}
         </View>

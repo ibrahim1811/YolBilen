@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { trackScreenView, trackFeedbackSubmit } from '../services/telemetry/telemetryService';
 import { View, StyleSheet, ScrollView, RefreshControl, TouchableOpacity, TextInput } from 'react-native';
 import { Text, Surface, useTheme, Button, Snackbar, TouchableRipple, Divider, Chip, ActivityIndicator } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -67,6 +68,8 @@ export function CommunityScreen() {
   const [plateInput, setPlateInput] = useState('');
   const [showBusList, setShowBusList] = useState(false);
 
+  useEffect(() => { trackScreenView('CommunityScreen'); }, []);
+
   const loadRecent = useCallback(async () => {
     try {
       const [feedbacks, activeAlerts] = await Promise.all([getRecentFeedbacks(8), getActiveAlerts()]);
@@ -127,6 +130,7 @@ export function CommunityScreen() {
         ...(selectedBusId ? { busId: selectedBusId } : {}),
         ...(plateInput.trim() ? { plateNumber: plateInput.trim() } : {}),
       });
+      trackFeedbackSubmit(!!plateInput.trim());
       setSnackbar('Teşekkürler! +10 puan kazandınız.');
       if (user) setUser({ ...user, contributionPoints: (user.contributionPoints ?? 0) + 10 });
       setSelectedLine(null);

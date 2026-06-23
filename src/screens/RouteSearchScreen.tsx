@@ -6,7 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
 import { RouteCard } from '../components/route/RouteCard';
-import { LoadingOverlay } from '../components/common/LoadingOverlay';
+import { SkeletonCard } from '../components/common/SkeletonCard';
 import { useAppStore } from '../store/useAppStore';
 import { findRoutes, sortRoutes } from '../services/gtfs/routingService';
 import { saveRouteCache, loadRouteCache } from '../services/cache/routeCache';
@@ -70,8 +70,6 @@ export function RouteSearchScreen({ navigation }: Props) {
 
   const sorted = useMemo(() => sortRoutes(routes, filterMode), [routes, filterMode]);
 
-  if (isLoading) return <LoadingOverlay message="Rotalar aranıyor..." />;
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <Appbar.Header style={{ backgroundColor: theme.colors.background }} elevated={false}>
@@ -110,8 +108,15 @@ export function RouteSearchScreen({ navigation }: Props) {
         ))}
       </ScrollView>
 
+      {isLoading ? (
+        <View style={styles.list}>
+          <SkeletonCard lines={3} height={100} />
+          <SkeletonCard lines={3} height={100} />
+          <SkeletonCard lines={3} height={100} />
+        </View>
+      ) : null}
       <FlatList
-        data={sorted}
+        data={isLoading ? [] : sorted}
         keyExtractor={r => r.id}
         contentContainerStyle={styles.list}
         renderItem={({ item }) => (

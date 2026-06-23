@@ -187,6 +187,16 @@ export async function findRoutes(origin: Location, destination: Location): Promi
     if (results.length >= 5) break;
   }
 
+  results.sort((a, b) => {
+    const wa = a.boardingStop
+      ? haversineKm({ lat: origin.latitude, lon: origin.longitude }, { lat: a.boardingStop.latitude, lon: a.boardingStop.longitude })
+      : 99;
+    const wb = b.boardingStop
+      ? haversineKm({ lat: origin.latitude, lon: origin.longitude }, { lat: b.boardingStop.latitude, lon: b.boardingStop.longitude })
+      : 99;
+    return wa - wb;
+  });
+
   return results;
 }
 

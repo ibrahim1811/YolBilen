@@ -124,8 +124,8 @@ export function CommunityScreen() {
         temperature: temp,
         crowd,
         timestamp: new Date(),
-        busId: selectedBusId ?? undefined,
-        plateNumber: plateInput.trim() || undefined,
+        ...(selectedBusId ? { busId: selectedBusId } : {}),
+        ...(plateInput.trim() ? { plateNumber: plateInput.trim() } : {}),
       });
       setSnackbar('Teşekkürler! +10 puan kazandınız.');
       if (user) setUser({ ...user, contributionPoints: (user.contributionPoints ?? 0) + 10 });

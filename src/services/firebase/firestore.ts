@@ -14,12 +14,14 @@ import {
   increment,
   Timestamp,
 } from 'firebase/firestore';
-import { db } from './config';
+import { db, auth } from './config';
 import type { Feedback, FavoriteLocation, FavoriteLine, FavoriteType, Location } from '../../types';
+import { updateBusCardFromFeedback } from './busCardService';
 
 // ── Feedback ──────────────────────────────────────────────────────────────────
 
 export async function submitFeedback(feedback: Omit<Feedback, 'id'>): Promise<void> {
+  if (!auth.currentUser) throw new Error('auth/session-expired');
   await addDoc(collection(db, 'feedbacks'), {
     ...feedback,
     timestamp: Timestamp.fromDate(feedback.timestamp),
@@ -38,6 +40,8 @@ export async function submitFeedback(feedback: Omit<Feedback, 'id'>): Promise<vo
   await setDoc(doc(db, 'users', feedback.userId), {
     contributionPoints: increment(10),
   }, { merge: true });
+
+  void updateBusCardFromFeedback(feedback as Feedback);
 }
 
 export async function getUserPoints(userId: string): Promise<number> {

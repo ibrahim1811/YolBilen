@@ -196,7 +196,19 @@ export type RootStackParamList = {
   NearbyStops: undefined;
   JourneyHistory: undefined;
   AdminPanel: undefined;
+  BusCard: { plate: string };
 };
+
+export interface BusCard {
+  plate: string;
+  totalReports: number;
+  climateScore: number;
+  crowdScore: number;
+  comfortScore: number;
+  satisfactionScore: number;
+  overallScore: number;
+  updatedAt: Date;
+}
 
 export interface NotificationPrefs {
   busArrivals: boolean;

@@ -8,6 +8,7 @@ import * as Location from 'expo-location';
 import { FeedbackChipGroup } from '../components/community/FeedbackChipGroup';
 import { LineSelectorModal } from '../components/community/LineSelector';
 import { RecentFeedbackCard } from '../components/community/RecentFeedbackCard';
+import { CrowdMapModal } from '../components/community/CrowdMapModal';
 import { submitFeedback, getRecentFeedbacks } from '../services/firebase/firestore';
 import { postAlert, getActiveAlerts, upvoteAlert, ALERT_LABELS, ALERT_ICONS, ALERT_EXPIRY_MINS } from '../services/firebase/alertService';
 import { checkIsAdmin } from '../services/firebase/adminService';
@@ -67,6 +68,7 @@ export function CommunityScreen() {
   const [selectedBusId, setSelectedBusId] = useState<string | null>(null);
   const [plateInput, setPlateInput] = useState('');
   const [showBusList, setShowBusList] = useState(false);
+  const [showCrowdMap, setShowCrowdMap] = useState(false);
 
   useEffect(() => { trackScreenView('CommunityScreen'); }, []);
 
@@ -118,6 +120,14 @@ export function CommunityScreen() {
     if (!user || !selectedLine) return;
     setLoading(true);
     try {
+      let feedbackLat: number | undefined;
+      let feedbackLon: number | undefined;
+      try {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        feedbackLat = pos.coords.latitude;
+        feedbackLon = pos.coords.longitude;
+      } catch {}
+
       await submitFeedback({
         userId: user.uid,
         routeId: `line-${selectedLine.number}`,
@@ -129,6 +139,7 @@ export function CommunityScreen() {
         timestamp: new Date(),
         ...(selectedBusId ? { busId: selectedBusId } : {}),
         ...(plateInput.trim() ? { plateNumber: plateInput.trim() } : {}),
+        ...(feedbackLat !== undefined ? { latitude: feedbackLat, longitude: feedbackLon } : {}),
       });
       trackFeedbackSubmit(!!plateInput.trim());
       setSnackbar('Teşekkürler! +10 puan kazandınız.');
@@ -329,6 +340,9 @@ export function CommunityScreen() {
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Topluluk Uyarıları</Text>
+            <TouchableOpacity onPress={() => setShowCrowdMap(true)} style={{ marginRight: 8 }}>
+              <MaterialCommunityIcons name="map-marker-multiple" size={22} color={theme.colors.primary} />
+            </TouchableOpacity>
             {isAdmin && selectedLine && (
               <TouchableOpacity onPress={() => setShowAlertForm(v => !v)}>
                 <MaterialCommunityIcons name={showAlertForm ? 'minus-circle-outline' : 'plus-circle-outline'} size={22} color={theme.colors.primary} />
@@ -439,6 +453,7 @@ export function CommunityScreen() {
         onSelect={(number, name) => setSelectedLine({ number, name })}
       />
 
+      <CrowdMapModal visible={showCrowdMap} onDismiss={() => setShowCrowdMap(false)} />
       <Snackbar
         visible={snackbar !== ''}
         onDismiss={() => setSnackbar('')}

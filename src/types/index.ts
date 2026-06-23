@@ -122,6 +122,8 @@ export interface Feedback {
   timestamp: Date;
   busId?: string;
   plateNumber?: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 export interface WeatherData {

@@ -3,7 +3,7 @@ import { db } from './config';
 
 const cache = new Map<string, boolean>();
 
-const DEV_ADMINS = ['ikcdeveloper@gmail.com'];
+const DEV_ADMINS = ['ibrahimkayracetin2008@gmail.com'];
 
 export async function checkIsAdmin(email: string | null | undefined): Promise<boolean> {
   if (!email) return false;

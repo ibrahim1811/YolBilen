@@ -81,6 +81,10 @@ export function LineDetailScreen({ navigation, route }: Props) {
   const [rawSchedule, setRawSchedule] = useState<import('../services/firebase/scheduleService').LineSchedule>({});
   const [scheduleLoading, setScheduleLoading] = useState(true);
   const lineStops = React.useMemo(() => orderedLineStops(lineNumber, fromStop, toStop), [lineNumber, fromStop, toStop]);
+  const hasOnlyWeekday = React.useMemo(
+    () => rawSchedule.weekday != null && rawSchedule.saturday == null && rawSchedule.sunday == null,
+    [rawSchedule]
+  );
 
   useEffect(() => { trackScreenView('LineDetail'); trackLineOpen(lineNumber); }, [lineNumber]);
 
@@ -192,9 +196,17 @@ export function LineDetailScreen({ navigation, route }: Props) {
             <Text style={[styles.scheduleNote, { color: theme.colors.onSurfaceVariant }]}>
               Saatler yükleniyor...
             </Text>
+          ) : Object.keys(rawSchedule).length === 0 ? (
+            <Text style={[styles.scheduleNote, { color: theme.colors.onSurfaceVariant }]}>
+              Bu hat için sefer verisi sisteme henüz eklenmemiş.{'\n'}ESHOT'un resmi sitesinden kontrol edebilirsiniz.
+            </Text>
           ) : schedule.dir0.length === 0 && schedule.dir1.length === 0 ? (
             <Text style={[styles.scheduleNote, { color: theme.colors.onSurfaceVariant }]}>
-              {isRing ? 'Ring hat — saatler gerçek zamanlı değişir, veri mevcut değil.' : 'Bu gün için sefer verisi yok.'}
+              {hasOnlyWeekday
+                ? 'Bu hat yalnızca hafta içi sefer yapıyor. Hafta İçi sekmesine geçin.'
+                : isRing
+                ? 'Ring hat — hafta içi saatler geçerlidir.'
+                : 'Bu gün için sefer verisi yok.'}
             </Text>
           ) : (() => {
             const nowMins = new Date().getHours() * 60 + new Date().getMinutes();

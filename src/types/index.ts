@@ -49,8 +49,10 @@ export interface Route {
 
 export interface Transfer {
   lineNumber: string;
-  stopName: string;
-  waitTime: number;
+  lineName: string;
+  boardStop: RouteStop;
+  alightStop: RouteStop;
+  walkMins: number;
 }
 
 export type CrowdLevel = 'low' | 'medium' | 'high' | 'very_high';

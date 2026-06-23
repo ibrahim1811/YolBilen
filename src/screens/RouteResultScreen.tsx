@@ -134,10 +134,10 @@ export function RouteResultScreen({ navigation }: Props) {
                 </View>
                 <View style={styles.transferInfo}>
                   <Text style={[styles.transferStop, { color: theme.colors.onSurface }]}>
-                    {t.stopName}
+                    {t.lineName} · {t.boardStop.name}
                   </Text>
                   <Text style={[styles.transferWait, { color: theme.colors.onSurfaceVariant }]}>
-                    ~{t.waitTime} dk bekleme
+                    ~{t.walkMins} dk yürüyüş
                   </Text>
                 </View>
               </View>

@@ -9,6 +9,7 @@ import { RouteCard } from '../components/route/RouteCard';
 import { LoadingOverlay } from '../components/common/LoadingOverlay';
 import { useAppStore } from '../store/useAppStore';
 import { findRoutes, sortRoutes } from '../services/gtfs/routingService';
+import { saveRouteCache, loadRouteCache } from '../services/cache/routeCache';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, RouteFilterMode, Route } from '../types';
 
@@ -51,8 +52,16 @@ export function RouteSearchScreen({ navigation }: Props) {
     let cancelled = false;
     setLoading(true);
     findRoutes(origin, destination)
-      .then(r => { if (!cancelled) setRoutes(r); })
-      .catch(() => { if (!cancelled) setRoutes([]); })
+      .then(async r => {
+        if (cancelled) return;
+        if (r.length > 0) void saveRouteCache(origin, destination, r);
+        setRoutes(r);
+      })
+      .catch(async () => {
+        if (cancelled) return;
+        const cached = await loadRouteCache(origin, destination);
+        setRoutes(cached ?? []);
+      })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [origin, destination]);

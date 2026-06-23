@@ -21,7 +21,8 @@ function buildMapHtml(params: {
   busPositions?: BusPosition[];
 }): string {
   const { boarding, alighting, center, steps, busPositions = [] } = params;
-  const transitStep = steps?.find(s => s.type === 'transit');
+  const transitSteps = steps?.filter(s => s.type === 'transit') ?? [];
+  const transitStep = transitSteps[0] ?? null;
   const midStops = transitStep?.intermediateStops ?? [];
   const boardStop = transitStep?.boardStop ?? null;
   const alightStop = transitStep?.alightStop ?? null;
@@ -68,6 +69,34 @@ function buildMapHtml(params: {
       `}else{L.polyline(${fallbackPts},{color:'#1A73E8',weight:5,dashArray:'10,5'}).addTo(map);}` +
       `}).catch(function(){L.polyline(${fallbackPts},{color:'#1A73E8',weight:5,dashArray:'10,5'}).addTo(map);});`
     : '';
+
+  // İkinci transit segment — aktarmalı rota (pembe)
+  const transit2 = transitSteps[1] ?? null;
+  const transit2Coords: [number, number][] = transit2?.boardStop && transit2?.alightStop
+    ? [
+        [transit2.boardStop.latitude, transit2.boardStop.longitude],
+        ...(transit2.intermediateStops ?? []).map(s => [s.latitude, s.longitude] as [number, number]),
+        [transit2.alightStop.latitude, transit2.alightStop.longitude],
+      ]
+    : [];
+  const osrm2Coords = transit2Coords.map(([lat, lon]) => `${lon},${lat}`).join(';');
+  const fallback2Pts = JSON.stringify(transit2Coords);
+  const osrm2FetchJs = transit2Coords.length >= 2
+    ? `fetch('https://router.project-osrm.org/route/v1/driving/${osrm2Coords}?overview=full&geometries=geojson')` +
+      `.then(function(r){return r.json();})` +
+      `.then(function(data){` +
+      `if(data.routes&&data.routes[0]){` +
+      `var c2=data.routes[0].geometry.coordinates.map(function(c){return[c[1],c[0]];});` +
+      `L.polyline(c2,{color:'#E91E63',weight:5,opacity:0.9,lineJoin:'round'}).addTo(map);` +
+      `}else{L.polyline(${fallback2Pts},{color:'#E91E63',weight:5,dashArray:'10,5'}).addTo(map);}` +
+      `}).catch(function(){L.polyline(${fallback2Pts},{color:'#E91E63',weight:5,dashArray:'10,5'}).addTo(map);});`
+    : '';
+  const intermediate2Js = (transit2?.intermediateStops ?? [])
+    .map(s =>
+      `L.circleMarker([${s.latitude},${s.longitude}],` +
+      `{radius:5,color:'#E91E63',fillColor:'#E91E63',fillOpacity:0.7,weight:2})` +
+      `.bindPopup(${JSON.stringify(s.name)}).addTo(map);`
+    ).join('\n');
 
   // Canlı otobüs marker'ları
   const busMarkersJs = busPositions.map(b => {
@@ -134,6 +163,7 @@ var userIcon=L.divIcon({html:'<div style="background:#1A73E8;border:3px solid wh
 var destIcon=L.divIcon({html:'<div style="background:#9C27B0;border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 2px 8px rgba(0,0,0,0.5)"></div>',iconSize:[18,18],iconAnchor:[9,9],className:''});
 
 ${intermediateJs}
+${intermediate2Js}
 ${walkLinesJs}
 ${boardStopJs}
 ${alightStopJs}
@@ -142,6 +172,7 @@ ${userBoardJs}
 ${userAlightJs}
 ${boundsJs}
 ${osrmFetchJs}
+${osrm2FetchJs}
 </script>
 </body>
 </html>`;
@@ -155,7 +186,8 @@ export function RouteMapScreen({ navigation, route: navRoute }: Props) {
   const [busPositions, setBusPositions] = React.useState<BusPosition[]>([]);
   const [liveSunAnalysis, setLiveSunAnalysis] = React.useState<SunAnalysis | null>(null);
 
-  const routeTransitStep = route.steps?.find(s => s.type === 'transit');
+  const routeTransitSteps = route.steps?.filter(s => s.type === 'transit') ?? [];
+  const routeTransitStep = routeTransitSteps[0] ?? null;
   const baseWaypoints: Array<{ latitude: number; longitude: number }> = routeTransitStep?.boardStop
     ? [routeTransitStep.boardStop, ...(routeTransitStep.intermediateStops ?? []), routeTransitStep.alightStop!]
     : [];
@@ -235,6 +267,11 @@ export function RouteMapScreen({ navigation, route: navRoute }: Props) {
         <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 4 }}>
           {transitStep?.intermediateStops ? `${transitStep.intermediateStops.length + 2} durak` : 'Hat güzergahı'} · Tahmini {route.estimatedDuration} dk
         </Text>
+        {routeTransitSteps.length > 1 && (
+          <Text variant="bodySmall" style={{ color: '#E91E63', marginTop: 2 }}>
+            Aktarmalı rota — ikinci hat pembe ile gösterilir
+          </Text>
+        )}
         {(liveSunAnalysis ?? route.sunAnalysis) && (
           <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}>
             {(liveSunAnalysis ?? route.sunAnalysis)!.recommendedSide === 'left'

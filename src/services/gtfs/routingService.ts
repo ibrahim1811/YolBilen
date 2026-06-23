@@ -136,10 +136,10 @@ async function liveNextArrival(
 }
 
 // getBusCard plate-based — hat numarasından plaka bilinmez; saat bazlı heuristik kullan
-function getCrowdLevel(lineNum: string): CrowdLevel {
+function getCrowdLevel(): CrowdLevel {
   const hour = new Date().getHours();
-  if ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19)) return 'high';
-  if ((hour >= 9 && hour <= 17) || (hour >= 19 && hour <= 21)) return 'medium';
+  if ((hour >= 7 && hour < 9) || (hour >= 17 && hour < 19)) return 'high';
+  if ((hour >= 9 && hour < 17) || (hour >= 19 && hour < 21)) return 'medium';
   return 'low';
 }
 
@@ -199,7 +199,7 @@ export async function findRoutes(origin: Location, destination: Location): Promi
     return boardWalk <= MAX_WALK_KM && alightWalk <= MAX_WALK_KM;
   }).slice(0, 5);
 
-  const crowdLevels = valid.map(({ lineNum }) => getCrowdLevel(lineNum));
+  const crowdLevels = valid.map(({ lineNum }) => getCrowdLevel());
   const arrivals = await Promise.all(valid.map(({ pair, lineNum }) =>
     liveNextArrival(lineNum, pair!.board.lat, pair!.board.lon, pair!.dir)
   ));
@@ -274,17 +274,23 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
     const name1 = getRouteName(line1);
     if (!name1) continue;
 
-    // board1: origin'e en yakın durak (dest olarak origin veriyoruz, sadece board lazım)
-    const pair1board = findBoardAlightPair(
-      line1,
-      { lat: origin.latitude, lon: origin.longitude },
-      { lat: origin.latitude, lon: origin.longitude }
-    );
-    if (!pair1board) continue;
+    // Her iki yönü dene — yanlış yön seçimini önler
+    for (const dir1 of [0, 1] as (0 | 1)[]) {
+    if (results.length >= 3) break;
 
-    const line1Stops = getOrderedStopsForDir(line1, pair1board.dir);
-    const boardIdx = line1Stops.findIndex(s => s.id === pair1board.board.id);
-    if (boardIdx < 0) continue;
+    const line1Stops = getOrderedStopsForDir(line1, dir1);
+    if (line1Stops.length < 2) continue;
+
+    // origin'e en yakın durak
+    let boardIdx = 0;
+    let boardDist = haversineKm({ lat: origin.latitude, lon: origin.longitude }, { lat: line1Stops[0].lat, lon: line1Stops[0].lon });
+    for (let i = 1; i < line1Stops.length; i++) {
+      const d = haversineKm({ lat: origin.latitude, lon: origin.longitude }, { lat: line1Stops[i].lat, lon: line1Stops[i].lon });
+      if (d < boardDist) { boardDist = d; boardIdx = i; }
+    }
+    if (boardDist > MAX_WALK_KM) continue;
+
+    const board1Stop = line1Stops[boardIdx];
 
     for (let midIdx = boardIdx + 2; midIdx < line1Stops.length; midIdx++) {
       if (results.length >= 3) break;
@@ -296,7 +302,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
         { lat: destination.latitude, lon: destination.longitude }
       );
       const distToDestFromBoard = haversineKm(
-        { lat: pair1board.board.lat, lon: pair1board.board.lon },
+        { lat: board1Stop.lat, lon: board1Stop.lon },
         { lat: destination.latitude, lon: destination.longitude }
       );
       if (distToDestFromMid >= distToDestFromBoard) continue;
@@ -325,7 +331,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
         );
         if (alightWalk > MAX_WALK_KM) continue;
 
-        const board1: RouteStop = { id: pair1board.board.id, name: pair1board.board.name, latitude: pair1board.board.lat, longitude: pair1board.board.lon };
+        const board1: RouteStop = { id: board1Stop.id, name: board1Stop.name, latitude: board1Stop.lat, longitude: board1Stop.lon };
         const alight1: RouteStop = { id: midStop.id, name: midStop.name, latitude: midStop.lat, longitude: midStop.lon };
         const board2: RouteStop = { id: pair2.board.id, name: pair2.board.name, latitude: pair2.board.lat, longitude: pair2.board.lon };
         const alight2: RouteStop = { id: pair2.alight.id, name: pair2.alight.name, latitude: pair2.alight.lat, longitude: pair2.alight.lon };
@@ -334,21 +340,21 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
           { lat: alight1.latitude, lon: alight1.longitude },
           { lat: board2.latitude, lon: board2.longitude }
         );
-        const transferWalkMins = Math.round(transferWalkKm * 12);
+        const transferWalkMins = Math.max(1, Math.round(transferWalkKm * 12));
 
-        const crowd1 = getCrowdLevel(line1);
-        const crowd2 = getCrowdLevel(line2);
+        const crowd1 = getCrowdLevel();
+        const crowd2 = getCrowdLevel();
         const [arr1, arr2] = await Promise.all([
-          liveNextArrival(line1, pair1board.board.lat, pair1board.board.lon, pair1board.dir),
+          liveNextArrival(line1, board1Stop.lat, board1Stop.lon, dir1),
           liveNextArrival(line2, pair2.board.lat, pair2.board.lon, pair2.dir),
         ]);
 
-        const midDest: Location = { name: alight1.name, latitude: alight1.latitude, longitude: alight1.longitude };
-        const midOrigin: Location = { name: board2.name, latitude: board2.latitude, longitude: board2.longitude };
-        const steps1 = buildSteps(origin, midDest, line1, pair1board.dir, board1, alight1, arr1);
-        const steps2 = buildSteps(midOrigin, destination, line2, pair2.dir, board2, alight2, arr2);
+        // Redundant 0-mesafe yürüyüş adımlarını çıkar
+        const steps1Raw = buildSteps(origin, { name: alight1.name, latitude: alight1.latitude, longitude: alight1.longitude }, line1, dir1, board1, alight1, arr1);
+        const steps2Raw = buildSteps({ name: board2.name, latitude: board2.latitude, longitude: board2.longitude }, destination, line2, pair2.dir, board2, alight2, arr2);
+        const steps1 = steps1Raw.slice(0, -1); // son walk (alight1→alight1) kaldırılır
+        const steps2 = steps2Raw.slice(1);     // ilk walk (board2→board2) kaldırılır
 
-        // EKSİKLİK 1 fix: aktarma yürüyüş adımı steps'e ekleniyor
         const transferWalkStep: RouteStep = {
           type: 'walk',
           durationMins: transferWalkMins,
@@ -364,12 +370,12 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
           : crowd1 === 'high' || crowd2 === 'high' ? 'high'
           : crowd1 === 'medium' || crowd2 === 'medium' ? 'medium' : 'low';
 
-        const sunAnalysis = sunAnalysisForSteps(steps1, origin, destination, line1, pair1board.dir);
+        const sunAnalysis = sunAnalysisForSteps(steps1, origin, destination, line1, dir1);
         const score = calcRouteScore(totalDuration, walkMeters, 1, crowdLevel, sunAnalysis);
         const confidence = calcConfidence(arr1 < 999, 0);
 
         results.push({
-          id: `transfer-${line1}-${line2}-${pair1board.dir}-${midIdx}`,
+          id: `transfer-${line1}-${line2}-${dir1}-${midIdx}`,
           lineNumber: line1,
           lineName: `${name1} → ${name2}`,
           estimatedDuration: totalDuration,
@@ -392,6 +398,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
         break;
       }
     }
+    } // dir1 loop
   }
   return results;
 }

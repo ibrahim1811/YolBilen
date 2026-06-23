@@ -5,6 +5,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LocationInput } from '../components/common/LocationInput';
 import { LocationPickerModal } from '../components/common/LocationPickerModal';
+import { SunMapModal } from '../components/common/SunMapModal';
+import SunCalc from 'suncalc';
 import { FavoriteLocationCard, AddFavoriteCard } from '../components/home/FavoriteLocationCard';
 import { FavoriteLineCard } from '../components/home/FavoriteLineCard';
 import { AddFavoriteModal } from '../components/home/AddFavoriteModal';
@@ -28,6 +30,8 @@ export function HomeScreen() {
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [locationPicker, setLocationPicker] = useState<'origin' | 'destination' | null>(null);
+  const [showSunMap, setShowSunMap] = useState(false);
+  const [sunGps, setSunGps] = useState<{ lat: number; lng: number } | null>(null);
   const weather = useWeather();
   const [routine, setRoutine] = useState<JourneyRecord | null>(null);
   const h = new Date().getHours();
@@ -245,17 +249,33 @@ export function HomeScreen() {
         )}
 
         {/* Sun Info Banner */}
-        <Surface style={[styles.infoCard, { backgroundColor: theme.colors.primaryContainer }]} elevation={0}>
-          <MaterialCommunityIcons name="white-balance-sunny" size={24} color={theme.colors.primary} />
-          <View style={styles.infoText}>
-            <Text style={[styles.infoTitle, { color: theme.colors.primary }]}>
-              Güneş Analizi Aktif
-            </Text>
-            <Text style={[styles.infoDesc, { color: theme.colors.onSurfaceVariant }]}>
-              Rota seçtikten sonra hangi tarafın daha serin olduğunu öğrenin.
-            </Text>
-          </View>
-        </Surface>
+        <TouchableOpacity
+          activeOpacity={0.75}
+          onPress={async () => {
+            try {
+              const { status } = await Location.requestForegroundPermissionsAsync();
+              if (status !== 'granted') return;
+              const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+              setSunGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+            } catch {
+              setSunGps({ lat: origin?.latitude ?? 38.4189, lng: origin?.longitude ?? 27.1287 });
+            }
+            setShowSunMap(true);
+          }}
+        >
+          <Surface style={[styles.infoCard, { backgroundColor: theme.colors.primaryContainer }]} elevation={0}>
+            <MaterialCommunityIcons name="white-balance-sunny" size={24} color={theme.colors.primary} />
+            <View style={styles.infoText}>
+              <Text style={[styles.infoTitle, { color: theme.colors.primary }]}>
+                Güneşi Gör
+              </Text>
+              <Text style={[styles.infoDesc, { color: theme.colors.onSurfaceVariant }]}>
+                Şu an güneş hangi yönde? Haritada görmek için dokun.
+              </Text>
+            </View>
+            <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.primary} />
+          </Surface>
+        </TouchableOpacity>
       </ScrollView>
 
       <LocationPickerModal
@@ -268,6 +288,22 @@ export function HomeScreen() {
         }}
         onDismiss={() => setLocationPicker(null)}
       />
+
+      {showSunMap && sunGps && (() => {
+        const pos = SunCalc.getPosition(new Date(), sunGps.lat, sunGps.lng);
+        const azimuth = ((pos.azimuth * 180) / Math.PI + 180 + 360) % 360;
+        const altitude = (pos.altitude * 180) / Math.PI;
+        return (
+          <SunMapModal
+            visible={showSunMap}
+            lat={sunGps.lat}
+            lng={sunGps.lng}
+            azimuth={azimuth}
+            altitude={altitude}
+            onDismiss={() => setShowSunMap(false)}
+          />
+        );
+      })()}
 
       {!user?.isGuest && (
         <AddFavoriteModal

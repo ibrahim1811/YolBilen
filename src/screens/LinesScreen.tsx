@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, StyleSheet, SectionList, TouchableOpacity } from 'react-native';
-import { Text, Surface, useTheme, Searchbar } from 'react-native-paper';
+import { Text, Surface, useTheme, Searchbar, TextInput } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFavorites } from '../hooks/useFavorites';
@@ -23,6 +23,7 @@ export function LinesScreen() {
   const user = useAppStore((s) => s.user);
   const { isLineFavorited, addLine, removeLine, favoriteLines } = useFavorites();
   const [search, setSearch] = React.useState('');
+  const [plateSearch, setPlateSearch] = useState('');
 
   const allLines = useMemo(() => getAllLines(), []);
   const allStops = useMemo(() => getStops(), []);
@@ -124,6 +125,26 @@ export function LinesScreen() {
           inputStyle={{ fontSize: 14 }}
           elevation={0}
         />
+        <TextInput
+          label="Plaka ile otobüs ara (ör: 35 DB 1234)"
+          value={plateSearch}
+          onChangeText={t => setPlateSearch(t.toUpperCase())}
+          mode="outlined"
+          dense
+          right={
+            plateSearch.trim().length >= 5 ? (
+              <TextInput.Icon
+                icon="arrow-right"
+                onPress={() => {
+                  navigation.navigate('BusCard', { plate: plateSearch.trim() });
+                  setPlateSearch('');
+                }}
+              />
+            ) : undefined
+          }
+          autoCapitalize="characters"
+          style={styles.plateInput}
+        />
       </View>
       <SectionList<SectionItem, Section>
         sections={sections}
@@ -151,6 +172,7 @@ const styles = StyleSheet.create({
   header: { padding: 16, gap: 12 },
   title: { fontSize: 24, fontWeight: '700' },
   searchbar: { borderRadius: 12 },
+  plateInput: { backgroundColor: 'transparent' },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
   sectionHeader: { fontSize: 11, fontWeight: '700', letterSpacing: 1, paddingVertical: 8 },
   card: {

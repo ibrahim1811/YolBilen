@@ -8,8 +8,11 @@ import { RouteResultScreen } from '../screens/RouteResultScreen';
 import { LineDetailScreen } from '../screens/LineDetailScreen';
 import { StopDetailScreen } from '../screens/StopDetailScreen';
 import { RouteMapScreen } from '../screens/RouteMapScreen';
+import { JourneyNavigationScreen } from '../screens/JourneyNavigationScreen';
 import { NearbyStopsScreen } from '../screens/NearbyStopsScreen';
 import { JourneyHistoryScreen } from '../screens/JourneyHistoryScreen';
+import { AdminPanelScreen } from '../screens/AdminPanelScreen';
+import { BusCardScreen } from '../screens/BusCardScreen';
 import { TabNavigator } from './TabNavigator';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
@@ -56,6 +59,11 @@ export function AppNavigator() {
               options={{ animation: 'slide_from_bottom' }}
             />
             <Stack.Screen
+              name="JourneyNavigation"
+              component={JourneyNavigationScreen}
+              options={{ animation: 'slide_from_bottom' }}
+            />
+            <Stack.Screen
               name="NearbyStops"
               component={NearbyStopsScreen}
               options={{ animation: 'slide_from_right' }}
@@ -63,6 +71,16 @@ export function AppNavigator() {
             <Stack.Screen
               name="JourneyHistory"
               component={JourneyHistoryScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="AdminPanel"
+              component={AdminPanelScreen}
+              options={{ animation: 'slide_from_right' }}
+            />
+            <Stack.Screen
+              name="BusCard"
+              component={BusCardScreen}
               options={{ animation: 'slide_from_right' }}
             />
           </>

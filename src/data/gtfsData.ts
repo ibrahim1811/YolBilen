@@ -139,7 +139,7 @@ export function findBoardAlightPair(
     if (stops.length < 2) continue;
 
     let boardI = 0, boardDist = haversineKm(origin, stops[0]);
-    for (let i = 1; i < stops.length - 1; i++) {
+    for (let i = 1; i < stops.length; i++) {
       const d = haversineKm(origin, stops[i]);
       if (d < boardDist) { boardDist = d; boardI = i; }
     }

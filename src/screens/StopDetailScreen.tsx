@@ -13,6 +13,7 @@ import { t } from '../i18n';
 import { getApproachingBuses, nearestIztekStopId, minsFromRemainingStops } from '../services/iztek/iztekService';
 import { getNextArrivalMins } from '../services/firebase/scheduleService';
 import { getRouteName } from '../data/gtfsData';
+import * as Notifications from 'expo-notifications';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StopDetail'>;
 
@@ -186,14 +187,38 @@ export function StopDetailScreen({ navigation, route }: Props) {
           ) : (
             <View style={styles.arrivalsList}>
               {arrivals.map((a, i) => (
-                <ArrivalRow
-                  key={`${a.lineNumber}-${i}`}
-                  arrival={a}
-                  onPress={() => nav.navigate('LineDetail', {
-                    lineNumber: a.lineNumber,
-                    lineName: a.lineName,
-                  })}
-                />
+                <View key={`${a.lineNumber}-${i}`} style={styles.arrivalRowWrap}>
+                  <View style={styles.arrivalRowFlex}>
+                    <ArrivalRow
+                      arrival={a}
+                      onPress={() => nav.navigate('LineDetail', {
+                        lineNumber: a.lineNumber,
+                        lineName: a.lineName,
+                      })}
+                    />
+                  </View>
+                  <Chip
+                    icon="bell-outline"
+                    compact
+                    onPress={async () => {
+                      const { status } = await Notifications.requestPermissionsAsync();
+                      if (status !== 'granted') { setSnackbar('Bildirim izni verilmedi.'); return; }
+                      const secs = Math.max(30, (a.minutesAway - 2) * 60);
+                      await Notifications.scheduleNotificationAsync({
+                        content: {
+                          title: `${a.lineNumber} Hattı Geliyor`,
+                          body: `${stopName} durağına ~${a.minutesAway} dakika kaldı.`,
+                          sound: true,
+                        },
+                        trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: secs },
+                      });
+                      setSnackbar(`${a.lineNumber} için hatırlatıcı kuruldu.`);
+                    }}
+                    style={styles.bellChip}
+                  >
+                    Hatırlat
+                  </Chip>
+                </View>
               ))}
             </View>
           )}
@@ -231,6 +256,9 @@ const styles = StyleSheet.create({
   countdown: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
   countdownText: { fontSize: 12, fontWeight: '600' },
   arrivalsList: { paddingHorizontal: 16 },
+  arrivalRowWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  arrivalRowFlex: { flex: 1 },
+  bellChip: { flexShrink: 0 },
   emptyArrivals: { padding: 32, alignItems: 'center', gap: 10 },
   emptyText: { fontSize: 14, textAlign: 'center' },
 });

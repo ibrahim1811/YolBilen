@@ -1,16 +1,16 @@
-import type { Route, Location, CrowdLevel, RouteStop, RouteStep, RouteFilterMode } from '../../types';
+import type { Route, Location, CrowdLevel, RouteStop, RouteStep, RouteFilterMode, SunAnalysis } from '../../types';
 import {
   findBoardAlightPair,
   getLinesNearOrigin,
   getOrderedStopsForDir,
   getRouteName,
 } from '../../data/gtfsData';
-import { analyzeSunExposureAlongRoute } from '../sun/sunAnalysis';
+import { getCachedSunAnalysis } from '../sun/sunCache';
 import { getNextArrivalMins } from '../firebase/scheduleService';
 import { getApproachingBuses, nearestIztekStopId, minsFromRemainingStops } from '../iztek/iztekService';
 
-const CROWD_CYCLE: CrowdLevel[] = ['low', 'medium', 'high', 'very_high'];
 const MAX_WALK_KM = 1.5;
+const MAX_TRANSFER_WALK_KM = 0.6;
 
 function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const R = 6371;
@@ -104,19 +104,30 @@ function buildSteps(
   ];
 }
 
-function sunAnalysisForSteps(steps: RouteStep[], origin: Location, destination: Location) {
+function sunAnalysisForSteps(
+  steps: RouteStep[],
+  origin: Location,
+  destination: Location,
+  lineNum: string,
+  dir: 0 | 1
+): SunAnalysis {
   const transit = steps.find(s => s.type === 'transit');
   const waypoints: Array<{ latitude: number; longitude: number }> = transit?.boardStop
     ? [transit.boardStop, ...(transit.intermediateStops ?? []), transit.alightStop!]
     : [origin, destination];
-  return analyzeSunExposureAlongRoute(waypoints, new Date());
+  return getCachedSunAnalysis(lineNum, dir, waypoints, new Date());
 }
 
-async function liveNextArrival(lineNum: string, lat: number, lon: number): Promise<number> {
+async function liveNextArrival(
+  lineNum: string,
+  lat: number,
+  lon: number,
+  dir: 0 | 1
+): Promise<number> {
   const iztekId = nearestIztekStopId(lat, lon);
   if (iztekId) {
     try {
-      const buses = await getApproachingBuses(iztekId);
+      const buses = await getApproachingBuses(iztekId, dir);
       const match = buses.find(b => String(b.hatNumarasi) === lineNum);
       if (match) return minsFromRemainingStops(match.kalanDurakSayisi);
     } catch {}
@@ -124,85 +135,40 @@ async function liveNextArrival(lineNum: string, lat: number, lon: number): Promi
   return getNextArrivalMins(lineNum);
 }
 
-const MAX_TRANSFER_WALK_KM = 0.6;
+// getBusCard plate-based — hat numarasından plaka bilinmez; saat bazlı heuristik kullan
+function getCrowdLevel(lineNum: string): CrowdLevel {
+  const hour = new Date().getHours();
+  if ((hour >= 7 && hour <= 9) || (hour >= 17 && hour <= 19)) return 'high';
+  if ((hour >= 9 && hour <= 17) || (hour >= 19 && hour <= 21)) return 'medium';
+  return 'low';
+}
 
-async function findTransferRoutes(origin: Location, destination: Location): Promise<Route[]> {
-  const results: Route[] = [];
-  const line1Candidates = getLinesNearOrigin(
-    { lat: origin.latitude, lon: origin.longitude },
-    MAX_WALK_KM
+function calcRouteScore(
+  estimatedDuration: number,
+  walkMeters: number,
+  transferCount: number,
+  crowdLevel: CrowdLevel,
+  sunAnalysis: SunAnalysis | undefined
+): number {
+  const crowdPenalty: Record<CrowdLevel, number> = { low: 0, medium: 5, high: 15, very_high: 30 };
+  const sunPenalty = sunAnalysis
+    ? Math.max(sunAnalysis.leftPercentage, sunAnalysis.rightPercentage) - 50
+    : 0;
+  return (
+    estimatedDuration * 0.4 +
+    (walkMeters / 1000) * 20 * 0.2 +
+    transferCount * 15 * 0.2 +
+    crowdPenalty[crowdLevel] * 0.1 +
+    Math.max(0, sunPenalty) * 0.1
   );
+}
 
-  for (const line1 of line1Candidates) {
-    if (results.length >= 3) break;
-    const name1 = getRouteName(line1);
-    if (!name1) continue;
-
-    const pair1 = findBoardAlightPair(
-      line1,
-      { lat: origin.latitude, lon: origin.longitude },
-      { lat: destination.latitude, lon: destination.longitude }
-    );
-    if (!pair1) continue;
-
-    const transferOrigin = { lat: pair1.alight.lat, lon: pair1.alight.lon };
-    const line2Candidates = getLinesNearOrigin(transferOrigin, MAX_TRANSFER_WALK_KM);
-
-    for (const line2 of line2Candidates) {
-      if (line2 === line1 || results.length >= 3) break;
-      const name2 = getRouteName(line2);
-      if (!name2) continue;
-
-      const pair2 = findBoardAlightPair(
-        line2,
-        transferOrigin,
-        { lat: destination.latitude, lon: destination.longitude }
-      );
-      if (!pair2) continue;
-
-      const alightWalk = haversineKm(
-        { lat: destination.latitude, lon: destination.longitude },
-        { lat: pair2.alight.lat, lon: pair2.alight.lon }
-      );
-      if (alightWalk > MAX_WALK_KM) continue;
-
-      const board1: RouteStop = { id: pair1.board.id, name: pair1.board.name, latitude: pair1.board.lat, longitude: pair1.board.lon };
-      const alight1: RouteStop = { id: pair1.alight.id, name: pair1.alight.name, latitude: pair1.alight.lat, longitude: pair1.alight.lon };
-      const board2: RouteStop = { id: pair2.board.id, name: pair2.board.name, latitude: pair2.board.lat, longitude: pair2.board.lon };
-      const alight2: RouteStop = { id: pair2.alight.id, name: pair2.alight.name, latitude: pair2.alight.lat, longitude: pair2.alight.lon };
-
-      const transferWalkKm = haversineKm(
-        { lat: alight1.latitude, lon: alight1.longitude },
-        { lat: board2.latitude, lon: board2.longitude }
-      );
-      const transferWalkMins = Math.round(transferWalkKm * 12);
-
-      const arr1 = await liveNextArrival(line1, pair1.board.lat, pair1.board.lon);
-      const arr2 = await liveNextArrival(line2, pair2.board.lat, pair2.board.lon);
-      const steps1 = buildSteps(origin, { name: alight1.name, latitude: alight1.latitude, longitude: alight1.longitude }, line1, pair1.dir, board1, alight1, arr1);
-      const midDest: Location = { name: board2.name, latitude: board2.latitude, longitude: board2.longitude };
-      const steps2 = buildSteps(midDest, destination, line2, pair2.dir, board2, alight2, arr2);
-
-      const totalDuration = steps1.reduce((s, st) => s + st.durationMins, 0)
-        + transferWalkMins
-        + steps2.reduce((s, st) => s + st.durationMins, 0);
-
-      results.push({
-        id: `transfer-${line1}-${line2}-${pair1.dir}`,
-        lineNumber: line1,
-        lineName: `${name1} → ${name2}`,
-        estimatedDuration: totalDuration,
-        transfers: [{ lineNumber: line2, lineName: name2, boardStop: board2, alightStop: alight2, walkMins: transferWalkMins }],
-        nextArrival: arr1,
-        crowdLevel: 'low',
-        sunAnalysis: sunAnalysisForSteps(steps1, origin, destination),
-        boardingStop: board1,
-        alightingStop: alight2,
-        steps: [...steps1, ...steps2],
-      });
-    }
-  }
-  return results;
+function calcConfidence(hasLiveData: boolean, totalReports: number): number {
+  let score = 30; // GTFS her zaman mevcut
+  if (hasLiveData) score += 40;
+  if (totalReports >= 10) score += 30;
+  else if (totalReports >= 3) score += 15;
+  return Math.min(100, score);
 }
 
 export async function findRoutes(origin: Location, destination: Location): Promise<Route[]> {
@@ -211,72 +177,78 @@ export async function findRoutes(origin: Location, destination: Location): Promi
     MAX_WALK_KM
   );
 
-  const results: Route[] = [];
-
-  for (const lineNum of candidateLines) {
-    const name = getRouteName(lineNum);
-    if (!name) continue;
-
-    const pair = findBoardAlightPair(
+  const pairs = candidateLines.map(lineNum => ({
+    lineNum,
+    name: getRouteName(lineNum),
+    pair: findBoardAlightPair(
       lineNum,
       { lat: origin.latitude, lon: origin.longitude },
       { lat: destination.latitude, lon: destination.longitude }
-    );
-    if (!pair) continue;
+    ),
+  })).filter(x => x.name && x.pair);
 
+  const valid = pairs.filter(({ pair }) => {
     const boardWalk = haversineKm(
       { lat: origin.latitude, lon: origin.longitude },
-      { lat: pair.board.lat, lon: pair.board.lon }
+      { lat: pair!.board.lat, lon: pair!.board.lon }
     );
     const alightWalk = haversineKm(
       { lat: destination.latitude, lon: destination.longitude },
-      { lat: pair.alight.lat, lon: pair.alight.lon }
+      { lat: pair!.alight.lat, lon: pair!.alight.lon }
     );
-    if (boardWalk > MAX_WALK_KM || alightWalk > MAX_WALK_KM) continue;
+    return boardWalk <= MAX_WALK_KM && alightWalk <= MAX_WALK_KM;
+  }).slice(0, 5);
+
+  const crowdLevels = valid.map(({ lineNum }) => getCrowdLevel(lineNum));
+  const arrivals = await Promise.all(valid.map(({ pair, lineNum }) =>
+    liveNextArrival(lineNum, pair!.board.lat, pair!.board.lon, pair!.dir)
+  ));
+
+  const results: Route[] = [];
+
+  valid.forEach(({ lineNum, name, pair }, i) => {
+    const nextArrival = arrivals[i];
+    const crowdLevel = crowdLevels[i];
+    const hasLiveData = nextArrival < 999 && nextArrival > 0;
 
     const boardStop: RouteStop = {
-      id: pair.board.id,
-      name: pair.board.name,
-      latitude: pair.board.lat,
-      longitude: pair.board.lon,
+      id: pair!.board.id,
+      name: pair!.board.name,
+      latitude: pair!.board.lat,
+      longitude: pair!.board.lon,
     };
     const alightStop: RouteStop = {
-      id: pair.alight.id,
-      name: pair.alight.name,
-      latitude: pair.alight.lat,
-      longitude: pair.alight.lon,
+      id: pair!.alight.id,
+      name: pair!.alight.name,
+      latitude: pair!.alight.lat,
+      longitude: pair!.alight.lon,
     };
 
-    const nextArrival = await liveNextArrival(lineNum, pair.board.lat, pair.board.lon);
-    const steps = buildSteps(origin, destination, lineNum, pair.dir, boardStop, alightStop, nextArrival);
+    const steps = buildSteps(origin, destination, lineNum, pair!.dir, boardStop, alightStop, nextArrival);
     const estimatedDuration = steps.reduce((s, st) => s + st.durationMins, 0);
+    const walkMeters = steps.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0);
+    const sunAnalysis = sunAnalysisForSteps(steps, origin, destination, lineNum, pair!.dir);
+    const score = calcRouteScore(estimatedDuration, walkMeters, 0, crowdLevel, sunAnalysis);
+    const confidence = calcConfidence(hasLiveData, 0);
 
     results.push({
-      id: `direct-${lineNum}-${pair.dir}`,
+      id: `direct-${lineNum}-${pair!.dir}`,
       lineNumber: lineNum,
-      lineName: name,
+      lineName: name!,
       estimatedDuration,
       transfers: [],
       nextArrival,
-      crowdLevel: CROWD_CYCLE[results.length % 4],
-      sunAnalysis: sunAnalysisForSteps(steps, origin, destination),
+      crowdLevel,
+      sunAnalysis,
       boardingStop: boardStop,
       alightingStop: alightStop,
       steps,
+      score,
+      confidence,
     });
-
-    if (results.length >= 5) break;
-  }
-
-  results.sort((a, b) => {
-    const wa = a.boardingStop
-      ? haversineKm({ lat: origin.latitude, lon: origin.longitude }, { lat: a.boardingStop.latitude, lon: a.boardingStop.longitude })
-      : 99;
-    const wb = b.boardingStop
-      ? haversineKm({ lat: origin.latitude, lon: origin.longitude }, { lat: b.boardingStop.latitude, lon: b.boardingStop.longitude })
-      : 99;
-    return wa - wb;
   });
+
+  results.sort((a, b) => (a.score ?? 99) - (b.score ?? 99));
 
   if (results.length < 3) {
     try {
@@ -290,26 +262,163 @@ export async function findRoutes(origin: Location, destination: Location): Promi
   return results;
 }
 
+async function findTransferRoutes(origin: Location, destination: Location): Promise<Route[]> {
+  const results: Route[] = [];
+  const line1Candidates = getLinesNearOrigin(
+    { lat: origin.latitude, lon: origin.longitude },
+    MAX_WALK_KM
+  );
+
+  for (const line1 of line1Candidates) {
+    if (results.length >= 3) break;
+    const name1 = getRouteName(line1);
+    if (!name1) continue;
+
+    // board1: origin'e en yakın durak (dest olarak origin veriyoruz, sadece board lazım)
+    const pair1board = findBoardAlightPair(
+      line1,
+      { lat: origin.latitude, lon: origin.longitude },
+      { lat: origin.latitude, lon: origin.longitude }
+    );
+    if (!pair1board) continue;
+
+    const line1Stops = getOrderedStopsForDir(line1, pair1board.dir);
+    const boardIdx = line1Stops.findIndex(s => s.id === pair1board.board.id);
+    if (boardIdx < 0) continue;
+
+    for (let midIdx = boardIdx + 2; midIdx < line1Stops.length; midIdx++) {
+      if (results.length >= 3) break;
+      const midStop = line1Stops[midIdx];
+
+      // Destination'a doğru ilerliyoruz mu kontrol et
+      const distToDestFromMid = haversineKm(
+        { lat: midStop.lat, lon: midStop.lon },
+        { lat: destination.latitude, lon: destination.longitude }
+      );
+      const distToDestFromBoard = haversineKm(
+        { lat: pair1board.board.lat, lon: pair1board.board.lon },
+        { lat: destination.latitude, lon: destination.longitude }
+      );
+      if (distToDestFromMid >= distToDestFromBoard) continue;
+
+      const line2Candidates = getLinesNearOrigin(
+        { lat: midStop.lat, lon: midStop.lon },
+        MAX_TRANSFER_WALK_KM
+      );
+
+      for (const line2 of line2Candidates) {
+        if (line2 === line1) continue; // BUG 2 fix: continue, break değil
+        if (results.length >= 3) break;
+        const name2 = getRouteName(line2);
+        if (!name2) continue;
+
+        const pair2 = findBoardAlightPair(
+          line2,
+          { lat: midStop.lat, lon: midStop.lon },
+          { lat: destination.latitude, lon: destination.longitude }
+        );
+        if (!pair2) continue;
+
+        const alightWalk = haversineKm(
+          { lat: destination.latitude, lon: destination.longitude },
+          { lat: pair2.alight.lat, lon: pair2.alight.lon }
+        );
+        if (alightWalk > MAX_WALK_KM) continue;
+
+        const board1: RouteStop = { id: pair1board.board.id, name: pair1board.board.name, latitude: pair1board.board.lat, longitude: pair1board.board.lon };
+        const alight1: RouteStop = { id: midStop.id, name: midStop.name, latitude: midStop.lat, longitude: midStop.lon };
+        const board2: RouteStop = { id: pair2.board.id, name: pair2.board.name, latitude: pair2.board.lat, longitude: pair2.board.lon };
+        const alight2: RouteStop = { id: pair2.alight.id, name: pair2.alight.name, latitude: pair2.alight.lat, longitude: pair2.alight.lon };
+
+        const transferWalkKm = haversineKm(
+          { lat: alight1.latitude, lon: alight1.longitude },
+          { lat: board2.latitude, lon: board2.longitude }
+        );
+        const transferWalkMins = Math.round(transferWalkKm * 12);
+
+        const crowd1 = getCrowdLevel(line1);
+        const crowd2 = getCrowdLevel(line2);
+        const [arr1, arr2] = await Promise.all([
+          liveNextArrival(line1, pair1board.board.lat, pair1board.board.lon, pair1board.dir),
+          liveNextArrival(line2, pair2.board.lat, pair2.board.lon, pair2.dir),
+        ]);
+
+        const midDest: Location = { name: alight1.name, latitude: alight1.latitude, longitude: alight1.longitude };
+        const midOrigin: Location = { name: board2.name, latitude: board2.latitude, longitude: board2.longitude };
+        const steps1 = buildSteps(origin, midDest, line1, pair1board.dir, board1, alight1, arr1);
+        const steps2 = buildSteps(midOrigin, destination, line2, pair2.dir, board2, alight2, arr2);
+
+        // EKSİKLİK 1 fix: aktarma yürüyüş adımı steps'e ekleniyor
+        const transferWalkStep: RouteStep = {
+          type: 'walk',
+          durationMins: transferWalkMins,
+          toStopName: board2.name,
+          distanceMeters: Math.round(transferWalkKm * 1000),
+        };
+
+        const allSteps: RouteStep[] = [...steps1, transferWalkStep, ...steps2];
+        const totalDuration = allSteps.reduce((s, st) => s + st.durationMins, 0);
+        const walkMeters = allSteps.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0);
+
+        const crowdLevel: CrowdLevel = crowd1 === 'very_high' || crowd2 === 'very_high' ? 'very_high'
+          : crowd1 === 'high' || crowd2 === 'high' ? 'high'
+          : crowd1 === 'medium' || crowd2 === 'medium' ? 'medium' : 'low';
+
+        const sunAnalysis = sunAnalysisForSteps(steps1, origin, destination, line1, pair1board.dir);
+        const score = calcRouteScore(totalDuration, walkMeters, 1, crowdLevel, sunAnalysis);
+        const confidence = calcConfidence(arr1 < 999, 0);
+
+        results.push({
+          id: `transfer-${line1}-${line2}-${pair1board.dir}-${midIdx}`,
+          lineNumber: line1,
+          lineName: `${name1} → ${name2}`,
+          estimatedDuration: totalDuration,
+          transfers: [{
+            lineNumber: line2,
+            lineName: name2,
+            boardStop: board2,
+            alightStop: alight2,
+            walkMins: transferWalkMins,
+          }],
+          nextArrival: arr1,
+          crowdLevel,
+          sunAnalysis,
+          boardingStop: board1,
+          alightingStop: alight2,
+          steps: allSteps,
+          score,
+          confidence,
+        });
+        break;
+      }
+    }
+  }
+  return results;
+}
+
 export function sortRoutes(routes: Route[], mode: RouteFilterMode): Route[] {
   switch (mode) {
     case 'fastest':
       return [...routes].sort((a, b) => a.estimatedDuration - b.estimatedDuration);
-    case 'comfortable':
-      return [...routes].sort((a, b) => {
-        const crowdOrder: Record<CrowdLevel, number> = { low: 0, medium: 1, high: 2, very_high: 3 };
-        return crowdOrder[a.crowdLevel] - crowdOrder[b.crowdLevel];
-      });
-    case 'cool': {
-      return [...routes].sort((a, b) => {
-        const la = a.sunAnalysis?.leftPercentage ?? 50;
-        const lb = b.sunAnalysis?.leftPercentage ?? 50;
-        return Math.abs(la - 50) - Math.abs(lb - 50);
-      });
+    case 'comfortable': {
+      const crowdOrder: Record<CrowdLevel, number> = { low: 0, medium: 1, high: 2, very_high: 3 };
+      return [...routes].sort((a, b) => crowdOrder[a.crowdLevel] - crowdOrder[b.crowdLevel]);
     }
+    case 'cool':
+      // EKSİKLİK 4 fix: en az güneş maruziyeti = en serin
+      return [...routes].sort((a, b) => {
+        const sunA = a.sunAnalysis ? Math.max(a.sunAnalysis.leftPercentage, a.sunAnalysis.rightPercentage) : 50;
+        const sunB = b.sunAnalysis ? Math.max(b.sunAnalysis.leftPercentage, b.sunAnalysis.rightPercentage) : 50;
+        return sunA - sunB;
+      });
     case 'least_transfers':
       return [...routes].sort((a, b) => a.transfers.length - b.transfers.length);
     case 'night_safe':
-      return [...routes];
+      return [...routes].sort((a, b) => {
+        const walkA = a.steps?.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0) ?? 0;
+        const walkB = b.steps?.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0) ?? 0;
+        return (a.transfers.length * 1000 + walkA) - (b.transfers.length * 1000 + walkB);
+      });
     default:
       return routes;
   }

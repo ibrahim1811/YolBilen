@@ -45,6 +45,8 @@ export interface Route {
   boardingStop?: RouteStop;
   alightingStop?: RouteStop;
   steps?: RouteStep[];
+  score?: number;
+  confidence?: number;
 }
 
 export interface Transfer {

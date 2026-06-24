@@ -1,4 +1,4 @@
-import type { Route, Location, CrowdLevel, RouteStop, RouteStep, RouteFilterMode, SunAnalysis, RouteScoreWeights } from '../../types';
+import type { Route, Location, CrowdLevel, RouteStop, RouteStep, RouteFilterMode, SunAnalysis, RouteScoreWeights, RouteConfidenceDetail } from '../../types';
 import {
   findBoardAlightPair,
   getLinesNearOrigin,
@@ -180,12 +180,49 @@ function calcRouteScore(
   );
 }
 
-function calcConfidence(hasLiveData: boolean, totalReports: number): number {
-  let score = 30; // GTFS her zaman mevcut
-  if (hasLiveData) score += 40;
-  if (totalReports >= 10) score += 30;
-  else if (totalReports >= 3) score += 15;
-  return Math.min(100, score);
+function calcConfidenceDetail(
+  hasLiveData: boolean,
+  hasScheduleData: boolean,
+  boardWalkM: number,
+  alightWalkM: number
+): RouteConfidenceDetail {
+  let score = 0;
+  const reasons: string[] = [];
+
+  if (hasLiveData) {
+    score += 40;
+    reasons.push('Canlı konum verisi mevcut');
+  } else {
+    reasons.push('Canlı veri yok — tarife kullanıldı');
+  }
+
+  if (hasScheduleData) {
+    score += 20;
+    reasons.push('Sefer tarihi doğrulandı');
+  } else {
+    reasons.push('Sefer tarihi eksik');
+  }
+
+  // Yön her zaman findBoardAlightPair tarafından doğrulanıyor
+  score += 20;
+  reasons.push('Yön doğrulandı');
+
+  const maxWalk = Math.max(boardWalkM, alightWalkM);
+  let stopMatchQuality: 'high' | 'medium' | 'low';
+  if (maxWalk < 300) {
+    score += 20;
+    stopMatchQuality = 'high';
+    reasons.push('Durak eşleşmesi mükemmel');
+  } else if (maxWalk < 600) {
+    score += 10;
+    stopMatchQuality = 'medium';
+    reasons.push('Durak eşleşmesi iyi');
+  } else {
+    stopMatchQuality = 'low';
+    reasons.push('Durak uzak — yürüyüş gerekli');
+  }
+
+  return { score: Math.min(100, score), hasLiveData, hasScheduleData, directionVerified: true, stopMatchQuality, reasons };
 }
 
 export async function findRoutes(
@@ -254,7 +291,10 @@ export async function findRoutes(
     const walkMeters = steps.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0);
     const sunAnalysis = sunAnalysisForSteps(steps, origin, destination, lineNum, pair!.dir);
     const score = calcRouteScore(estimatedDuration, walkMeters, 0, crowdLevel, sunAnalysis, weights);
-    const confidence = calcConfidence(hasLiveData, 0);
+    const scheduleOk = hasSchedule(lineNum);
+    const boardWalkM = steps[0]?.distanceMeters ?? 0;
+    const alightWalkM = steps[steps.length - 1]?.distanceMeters ?? 0;
+    const confidenceDetail = calcConfidenceDetail(hasLiveData, scheduleOk, boardWalkM, alightWalkM);
 
     results.push({
       id: `direct-${lineNum}-${pair!.dir}`,
@@ -269,8 +309,9 @@ export async function findRoutes(
       alightingStop: alightStop,
       steps,
       score,
-      confidence,
-      hasIncompleteData: !hasSchedule(lineNum),
+      confidence: confidenceDetail.score,
+      confidenceDetail,
+      hasIncompleteData: !scheduleOk,
     });
   });
 
@@ -398,8 +439,13 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
           : crowd1 === 'medium' || crowd2 === 'medium' ? 'medium' : 'low';
 
         const sunAnalysis = sunAnalysisForSteps(steps1, origin, destination, line1, dir1);
-        const score = calcRouteScore(totalDuration, walkMeters, 1, crowdLevel, sunAnalysis);
-        const confidence = calcConfidence(arr1 < 999, 0);
+        const score = calcRouteScore(totalDuration, walkMeters, 1, crowdLevel, sunAnalysis, DEFAULT_WEIGHTS);
+        const hasLive1 = arr1 < 999 && arr1 > 0;
+        const scheduleOk1 = hasSchedule(line1);
+        const scheduleOk2 = hasSchedule(line2);
+        const tBoardWalkM = allSteps[0]?.distanceMeters ?? 0;
+        const tAlightWalkM = allSteps[allSteps.length - 1]?.distanceMeters ?? 0;
+        const confidenceDetail = calcConfidenceDetail(hasLive1, scheduleOk1 && scheduleOk2, tBoardWalkM, tAlightWalkM);
 
         results.push({
           id: `transfer-${line1}-${line2}-${dir1}-${midIdx}`,
@@ -420,8 +466,9 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
           alightingStop: alight2,
           steps: allSteps,
           score,
-          confidence,
-          hasIncompleteData: !hasSchedule(line1) || !hasSchedule(line2),
+          confidence: confidenceDetail.score,
+          confidenceDetail,
+          hasIncompleteData: !scheduleOk1 || !scheduleOk2,
         });
         break;
       }

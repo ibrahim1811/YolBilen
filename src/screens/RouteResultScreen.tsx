@@ -145,6 +145,28 @@ export function RouteResultScreen({ navigation }: Props) {
           </Surface>
         )}
 
+        {selectedRoute.confidenceDetail && (
+          <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Güvenilirlik</Text>
+              <Text style={{
+                fontSize: 22,
+                fontWeight: '800',
+                color: selectedRoute.confidenceDetail.score >= 80 ? '#10B981'
+                  : selectedRoute.confidenceDetail.score >= 60 ? '#F59E0B' : '#EF4444',
+              }}>
+                %{selectedRoute.confidenceDetail.score}
+              </Text>
+            </View>
+            {selectedRoute.confidenceDetail.reasons.map((r, i) => (
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                <MaterialCommunityIcons name="check-circle-outline" size={14} color={theme.colors.onSurfaceVariant} />
+                <Text style={{ fontSize: 13, color: theme.colors.onSurfaceVariant }}>{r}</Text>
+              </View>
+            ))}
+          </Surface>
+        )}
+
         <AiSummaryCard
           route={selectedRoute}
           weather={weather.data}

@@ -83,9 +83,13 @@ export function getRouteName(lineNum: string): string | undefined {
   return _routeMeta![lineNum]?.name;
 }
 
+let _allLines: Array<{ lineNum: string; name: string }> | null = null;
+
 export function getAllLines(): Array<{ lineNum: string; name: string }> {
+  if (_allLines) return _allLines;
   if (!_routeMeta) _routeMeta = require('./gtfs/route-meta.json');
-  return Object.entries(_routeMeta!).map(([lineNum, { name }]) => ({ lineNum, name }));
+  _allLines = Object.entries(_routeMeta!).map(([lineNum, { name }]) => ({ lineNum, name }));
+  return _allLines;
 }
 
 const _linesNearCache = new Map<string, string[]>();

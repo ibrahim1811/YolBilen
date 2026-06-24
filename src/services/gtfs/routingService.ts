@@ -8,6 +8,7 @@ import {
 import { getCachedSunAnalysis } from '../sun/sunCache';
 import { getNextArrivalMins } from '../firebase/scheduleService';
 import { getApproachingBuses, nearestIztekStopId, minsFromRemainingStops } from '../iztek/iztekService';
+import { hasSchedule } from '../../data/scheduleData';
 
 const MAX_WALK_KM = 1.5;
 const MAX_TRANSFER_WALK_KM = 0.6;
@@ -245,6 +246,7 @@ export async function findRoutes(origin: Location, destination: Location): Promi
       steps,
       score,
       confidence,
+      hasIncompleteData: !hasSchedule(lineNum),
     });
   });
 
@@ -394,6 +396,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
           steps: allSteps,
           score,
           confidence,
+          hasIncompleteData: !hasSchedule(line1) || !hasSchedule(line2),
         });
         break;
       }

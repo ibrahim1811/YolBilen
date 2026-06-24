@@ -47,6 +47,25 @@ export interface Route {
   steps?: RouteStep[];
   score?: number;
   confidence?: number;
+  hasIncompleteData?: boolean;
+  confidenceDetail?: RouteConfidenceDetail;
+}
+
+export interface RouteConfidenceDetail {
+  score: number;
+  hasLiveData: boolean;
+  hasScheduleData: boolean;
+  directionVerified: boolean;
+  stopMatchQuality: 'high' | 'medium' | 'low';
+  reasons: string[];
+}
+
+export interface RouteScoreWeights {
+  duration: number;
+  walk: number;
+  transfer: number;
+  crowd: number;
+  sun: number;
 }
 
 export interface Transfer {

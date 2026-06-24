@@ -98,7 +98,30 @@ export function RouteCard({ route, onPress }: Props) {
               </Text>
             </View>
           )}
+          {route.confidence !== undefined && (
+            <View style={[
+              styles.confidenceBadge,
+              { backgroundColor: route.confidence >= 80 ? '#D1FAE5' : route.confidence >= 60 ? '#FEF3C7' : '#FEE2E2' },
+            ]}>
+              <MaterialCommunityIcons
+                name={route.confidence >= 80 ? 'shield-check' : route.confidence >= 60 ? 'shield-half-full' : 'shield-alert'}
+                size={12}
+                color={route.confidence >= 80 ? '#065F46' : route.confidence >= 60 ? '#92400E' : '#991B1B'}
+              />
+              <Text style={[styles.confidenceText, {
+                color: route.confidence >= 80 ? '#065F46' : route.confidence >= 60 ? '#92400E' : '#991B1B',
+              }]}>
+                %{route.confidence}
+              </Text>
+            </View>
+          )}
         </View>
+        {route.hasIncompleteData && (
+          <View style={styles.incompleteRow}>
+            <MaterialCommunityIcons name="information-outline" size={13} color="#F59E0B" />
+            <Text style={styles.incompleteText}>Tam sefer verisi mevcut değil</Text>
+          </View>
+        )}
       </Surface>
     </TouchableOpacity>
   );
@@ -185,5 +208,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     flex: 1,
+  },
+  confidenceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  confidenceText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  incompleteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
+  },
+  incompleteText: {
+    fontSize: 11,
+    color: '#F59E0B',
   },
 });

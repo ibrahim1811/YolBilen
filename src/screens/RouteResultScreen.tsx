@@ -193,6 +193,20 @@ export function RouteResultScreen({ navigation }: Props) {
           <SunSideCard analysis={selectedRoute.sunAnalysis} />
         )}
 
+        {selectedRoute.hasIncompleteData && (
+          <Surface style={[styles.infoAlert, { backgroundColor: '#FEF3C7' }]} elevation={0}>
+            <MaterialCommunityIcons name="calendar-remove" size={20} color="#D97706" />
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#92400E', fontWeight: '700', fontSize: 14 }}>
+                Bu hat için tam sefer verisi mevcut değil
+              </Text>
+              <Text style={{ color: '#92400E', fontSize: 12, marginTop: 2 }}>
+                Varış süresi tahminidir. Gerçek sefer saatleri değişebilir.
+              </Text>
+            </View>
+          </Surface>
+        )}
+
         {selectedRoute.steps && selectedRoute.steps.length > 0 && (
           <RouteStepsCard steps={selectedRoute.steps} />
         )}
@@ -347,6 +361,7 @@ const styles = StyleSheet.create({
   startBtnContent: { height: 56 },
   startBtnLabel: { fontSize: 16, fontWeight: '700' },
   mapBtn: { borderRadius: 12 },
+  infoAlert: { borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   stepConnector: { width: 2, height: 12, marginLeft: 19, marginVertical: 2 },
   stepIcon: { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },

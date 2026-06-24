@@ -137,8 +137,19 @@ export async function getLineBusPositions(lineNumber: string): Promise<BusPositi
   }
 }
 
+function getTrafficMultiplier(): number {
+  const now = new Date();
+  const h = now.getHours();
+  const isWeekend = now.getDay() === 0 || now.getDay() === 6;
+  if (isWeekend) return h >= 11 && h < 20 ? 1.15 : 1.0;
+  if ((h >= 7 && h < 9) || (h >= 17 && h < 19)) return 1.45;
+  if ((h >= 9 && h < 12) || (h >= 19 && h < 21)) return 1.20;
+  if (h >= 22 || h < 6) return 0.85;
+  return 1.0;
+}
+
 export function minsFromRemainingStops(kalanDurak: number): number {
-  return Math.max(1, Math.round(kalanDurak * MINS_PER_STOP));
+  return Math.max(1, Math.round(kalanDurak * MINS_PER_STOP * getTrafficMultiplier()));
 }
 
 export function estimateArrivalFromPosition(
@@ -148,5 +159,5 @@ export function estimateArrivalFromPosition(
 ): number | null {
   if (buses.length === 0) return null;
   const minDist = Math.min(...buses.map(b => distKm(b.lat, b.lon, stopLat, stopLon)));
-  return Math.max(1, Math.round((minDist / BUS_SPEED_KMH) * 60));
+  return Math.max(1, Math.round((minDist / BUS_SPEED_KMH) * 60 * getTrafficMultiplier()));
 }

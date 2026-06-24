@@ -13,6 +13,7 @@ import { t } from '../i18n';
 import { getApproachingBuses, nearestIztekStopId, minsFromRemainingStops } from '../services/iztek/iztekService';
 import { getNextArrivalMins } from '../services/firebase/scheduleService';
 import { getRouteName } from '../data/gtfsData';
+import { getLineFeedbacks } from '../services/firebase/firestore';
 import * as Notifications from 'expo-notifications';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'StopDetail'>;
@@ -29,6 +30,7 @@ export function StopDetailScreen({ navigation, route }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [snackbar, setSnackbar] = useState('');
   const [countdown, setCountdown] = useState(30);
+  const [hourlyData, setHourlyData] = useState<number[]>(new Array(24).fill(0));
 
   const isFavorited = favoriteLocations.some((f) => f.location.name === stopName);
 
@@ -62,6 +64,15 @@ export function StopDetailScreen({ navigation, route }: Props) {
     });
     setArrivals(mapped);
   }, [latitude, longitude, lines]);
+
+  useEffect(() => {
+    if (!lines || lines.length === 0) return;
+    Promise.all(lines.slice(0, 3).map(l => getLineFeedbacks(l))).then(results => {
+      const counts = new Array(24).fill(0);
+      results.flat().forEach(f => { counts[f.timestamp.getHours()]++; });
+      setHourlyData(counts);
+    }).catch(() => {});
+  }, [lines?.join(',')]);
 
   useEffect(() => {
     loadArrivals();
@@ -223,6 +234,34 @@ export function StopDetailScreen({ navigation, route }: Props) {
             </View>
           )}
         </Surface>
+
+        {/* Saatlik Yoğunluk */}
+        {hourlyData.some(v => v > 0) && (() => {
+          const peak = Math.max(...hourlyData);
+          const activeHours = [7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22];
+          return (
+            <Surface style={[styles.peakCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
+              <View style={styles.peakHeader}>
+                <MaterialCommunityIcons name="chart-bar" size={18} color={theme.colors.primary} />
+                <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Saatlik Yoğunluk</Text>
+              </View>
+              <View style={styles.peakBars}>
+                {activeHours.map(h => {
+                  const ratio = peak > 0 ? hourlyData[h] / peak : 0;
+                  const color = ratio > 0.66 ? '#EA4335' : ratio > 0.33 ? '#FBBC04' : '#34A853';
+                  return (
+                    <View key={h} style={styles.peakCol}>
+                      <View style={styles.peakBarWrap}>
+                        <View style={[styles.peakBar, { height: Math.max(4, Math.round(ratio * 48)), backgroundColor: ratio > 0 ? color : theme.colors.surfaceVariant }]} />
+                      </View>
+                      <Text style={[styles.peakLabel, { color: theme.colors.onSurfaceVariant }]}>{h}</Text>
+                    </View>
+                  );
+                })}
+              </View>
+            </Surface>
+          );
+        })()}
       </ScrollView>
 
       <Snackbar
@@ -259,6 +298,13 @@ const styles = StyleSheet.create({
   arrivalRowWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   arrivalRowFlex: { flex: 1 },
   bellChip: { flexShrink: 0 },
+  peakCard: { borderRadius: 16, padding: 16, gap: 12 },
+  peakHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  peakBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 64 },
+  peakCol: { flex: 1, alignItems: 'center', gap: 3 },
+  peakBarWrap: { height: 48, justifyContent: 'flex-end' },
+  peakBar: { width: '100%', borderRadius: 3 },
+  peakLabel: { fontSize: 8 },
   emptyArrivals: { padding: 32, alignItems: 'center', gap: 10 },
   emptyText: { fontSize: 14, textAlign: 'center' },
 });

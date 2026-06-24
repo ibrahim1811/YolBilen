@@ -11,8 +11,9 @@ import { getNextArrivalMins } from '../firebase/scheduleService';
 import { getApproachingBuses, nearestIztekStopId, minsFromRemainingStops } from '../iztek/iztekService';
 import { hasSchedule } from '../../data/scheduleData';
 
-const MAX_WALK_KM = 1.5;
-const MAX_TRANSFER_WALK_KM = 0.6;
+const WALK_NORMAL_M = 700;
+const WALK_EXTENDED_M = 1200;
+const TRANSFER_WALK_M = 600;
 
 function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const R = 6371;
@@ -173,10 +174,17 @@ function calcConfidence(hasLiveData: boolean, totalReports: number): number {
   return Math.min(100, score);
 }
 
-export async function findRoutes(origin: Location, destination: Location): Promise<Route[]> {
+export async function findRoutes(
+  origin: Location,
+  destination: Location,
+  options: { allowLongWalk?: boolean } = {}
+): Promise<Route[]> {
+  const maxWalkM = options.allowLongWalk ? WALK_EXTENDED_M : WALK_NORMAL_M;
+  const maxWalkKm = maxWalkM / 1000;
+
   const candidateLines = getLinesNearOrigin(
     { lat: origin.latitude, lon: origin.longitude },
-    MAX_WALK_KM
+    maxWalkKm
   );
 
   const pairs = candidateLines.map(lineNum => ({
@@ -190,15 +198,15 @@ export async function findRoutes(origin: Location, destination: Location): Promi
   })).filter(x => x.name && x.pair);
 
   const valid = pairs.filter(({ pair }) => {
-    const boardWalk = haversineKm(
+    const boardWalkM = haversineKm(
       { lat: origin.latitude, lon: origin.longitude },
       { lat: pair!.board.lat, lon: pair!.board.lon }
-    );
-    const alightWalk = haversineKm(
+    ) * 1000;
+    const alightWalkM = haversineKm(
       { lat: destination.latitude, lon: destination.longitude },
       { lat: pair!.alight.lat, lon: pair!.alight.lon }
-    );
-    return boardWalk <= MAX_WALK_KM && alightWalk <= MAX_WALK_KM;
+    ) * 1000;
+    return boardWalkM <= maxWalkM && alightWalkM <= maxWalkM;
   }).slice(0, 5);
 
   const crowdLevels = valid.map(({ lineNum }) => getCrowdLevel());
@@ -270,7 +278,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
   const results: Route[] = [];
   const line1Candidates = getLinesNearOrigin(
     { lat: origin.latitude, lon: origin.longitude },
-    MAX_WALK_KM
+    WALK_NORMAL_M / 1000
   );
 
   for (const line1 of line1Candidates) {
@@ -292,7 +300,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
       const d = haversineKm({ lat: origin.latitude, lon: origin.longitude }, { lat: line1Stops[i].lat, lon: line1Stops[i].lon });
       if (d < boardDist) { boardDist = d; boardIdx = i; }
     }
-    if (boardDist > MAX_WALK_KM) continue;
+    if (boardDist * 1000 > WALK_NORMAL_M) continue;
 
     const board1Stop = line1Stops[boardIdx];
 
@@ -313,7 +321,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
 
       const line2Candidates = getLinesNearOrigin(
         { lat: midStop.lat, lon: midStop.lon },
-        MAX_TRANSFER_WALK_KM
+        TRANSFER_WALK_M / 1000
       );
 
       for (const line2 of line2Candidates) {
@@ -333,7 +341,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
           { lat: destination.latitude, lon: destination.longitude },
           { lat: pair2.alight.lat, lon: pair2.alight.lon }
         );
-        if (alightWalk > MAX_WALK_KM) continue;
+        if (alightWalk * 1000 > WALK_NORMAL_M) continue;
 
         const board1: RouteStop = { id: board1Stop.id, name: board1Stop.name, latitude: board1Stop.lat, longitude: board1Stop.lon };
         const alight1: RouteStop = { id: midStop.id, name: midStop.name, latitude: midStop.lat, longitude: midStop.lon };

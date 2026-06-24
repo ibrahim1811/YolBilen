@@ -40,7 +40,7 @@ async function scheduleArrivalNotification(route: Route) {
 
 export function RouteSearchScreen({ navigation }: Props) {
   const theme = useTheme();
-  const { origin, destination, routes, setRoutes, setSelectedRoute, isLoading, setLoading } = useAppStore();
+  const { origin, destination, routes, setRoutes, setSelectedRoute, isLoading, setLoading, allowLongWalk } = useAppStore();
   const [filterMode, setFilterMode] = useState<RouteFilterMode>('fastest');
   const [notifiedRouteId, setNotifiedRouteId] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -54,7 +54,7 @@ export function RouteSearchScreen({ navigation }: Props) {
     let cancelled = false;
     setLoading(true);
     setSearchError(null);
-    findRoutes(origin, destination)
+    findRoutes(origin, destination, { allowLongWalk })
       .then(async r => {
         if (cancelled) return;
         if (r.length > 0) void saveRouteCache(origin, destination, r);
@@ -129,7 +129,7 @@ export function RouteSearchScreen({ navigation }: Props) {
             if (origin && destination) {
               setSearchError(null);
               setLoading(true);
-              findRoutes(origin, destination)
+              findRoutes(origin, destination, { allowLongWalk })
                 .then(r => { if (r.length > 0) void saveRouteCache(origin, destination, r); setRoutes(r); })
                 .catch(() => setSearchError('Rotalar yüklenemedi. İnternet bağlantınızı kontrol edin.'))
                 .finally(() => setLoading(false));

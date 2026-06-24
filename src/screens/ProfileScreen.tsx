@@ -16,7 +16,7 @@ import type { RootStackParamList } from '../types';
 export function ProfileScreen() {
   const theme = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { user, setUser, isDarkMode, toggleDarkMode } = useAppStore();
+  const { user, setUser, isDarkMode, toggleDarkMode, allowLongWalk, setAllowLongWalk } = useAppStore();
   const [points, setPoints] = React.useState(user?.contributionPoints ?? 0);
   const [isAdmin, setIsAdmin] = React.useState(false);
 
@@ -135,6 +135,21 @@ export function ProfileScreen() {
               />
             )}
             right={() => <Switch value={isDarkMode} onValueChange={toggleDarkMode} />}
+          />
+          <Divider />
+          <List.Item
+            title="Uzun yürüyüşlere izin ver"
+            description="Durağa 1.2 km'ye kadar yürümeyi kabul et (varsayılan: 700m)"
+            titleStyle={{ color: theme.colors.onSurface }}
+            left={() => (
+              <MaterialCommunityIcons
+                name="walk"
+                size={24}
+                color={theme.colors.onSurfaceVariant}
+                style={{ marginLeft: 8, alignSelf: 'center' }}
+              />
+            )}
+            right={() => <Switch value={allowLongWalk} onValueChange={setAllowLongWalk} />}
           />
           <Divider />
           <List.Item

@@ -6,6 +6,7 @@ import type { User, Location, Route, FavoriteLocation, FavoriteLine } from '../t
 interface AppState {
   user: User | null;
   isDarkMode: boolean;
+  allowLongWalk: boolean;
   origin: Location | null;
   destination: Location | null;
   routes: Route[];
@@ -17,6 +18,7 @@ interface AppState {
 
   setUser: (user: User | null) => void;
   toggleDarkMode: () => void;
+  setAllowLongWalk: (v: boolean) => void;
   setOrigin: (location: Location | null) => void;
   setDestination: (destination: Location | null) => void;
   setRoutes: (routes: Route[]) => void;
@@ -36,6 +38,7 @@ export const useAppStore = create<AppState>()(
     (set) => ({
       user: null,
       isDarkMode: false,
+      allowLongWalk: false,
       origin: null,
       destination: null,
       routes: [],
@@ -47,6 +50,7 @@ export const useAppStore = create<AppState>()(
 
       setUser: (user) => set({ user }),
       toggleDarkMode: () => set((s) => ({ isDarkMode: !s.isDarkMode })),
+      setAllowLongWalk: (allowLongWalk) => set({ allowLongWalk }),
       setOrigin: (origin) => set({ origin }),
       setDestination: (destination) => set({ destination }),
       setRoutes: (routes) => set({ routes }),
@@ -70,6 +74,7 @@ export const useAppStore = create<AppState>()(
       partialize: (state) => ({
         user: state.user,
         isDarkMode: state.isDarkMode,
+        allowLongWalk: state.allowLongWalk,
         favoriteLocations: state.favoriteLocations,
         favoriteLines: state.favoriteLines,
       }),

@@ -4,6 +4,7 @@ import {
   getLinesNearOrigin,
   getOrderedStopsForDir,
   getRouteName,
+  clearLinesNearCache,
 } from '../../data/gtfsData';
 import { getCachedSunAnalysis } from '../sun/sunCache';
 import { getNextArrivalMins } from '../firebase/scheduleService';
@@ -261,6 +262,7 @@ export async function findRoutes(origin: Location, destination: Location): Promi
     } catch {}
   }
 
+  clearLinesNearCache();
   return results;
 }
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { trackScreenView, trackRouteSearch } from '../services/telemetry/telemetryService';
 import { View, StyleSheet, FlatList, ScrollView } from 'react-native';
 import { Text, useTheme, Appbar, Chip } from 'react-native-paper';
@@ -81,6 +81,32 @@ export function RouteSearchScreen({ navigation }: Props) {
 
   const sorted = useMemo(() => sortRoutes(routes, filterMode), [routes, filterMode]);
 
+  const renderRoute = useCallback(({ item }: { item: Route }) => (
+    <View>
+      <RouteCard
+        route={item}
+        onPress={() => {
+          setSelectedRoute(item);
+          trackRouteSearch(origin?.name ?? '', destination?.name ?? '');
+          navigation.navigate('RouteResults', { origin: origin!, destination: destination! });
+        }}
+      />
+      <View style={styles.notifyRow}>
+        <Chip
+          icon={notifiedRouteId === item.id ? 'bell-check' : 'bell-outline'}
+          onPress={async () => {
+            await scheduleArrivalNotification(item);
+            setNotifiedRouteId(item.id);
+          }}
+          compact
+          style={[styles.notifyChip, notifiedRouteId === item.id && { backgroundColor: '#E8F0FE' }]}
+        >
+          {notifiedRouteId === item.id ? 'Bildirim ayarlandı' : `${item.lineNumber} hattı gelince bildir`}
+        </Chip>
+      </View>
+    </View>
+  ), [notifiedRouteId, origin, destination, navigation, setSelectedRoute]);
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <Appbar.Header style={{ backgroundColor: theme.colors.background }} elevated={false}>
@@ -144,31 +170,11 @@ export function RouteSearchScreen({ navigation }: Props) {
         data={isLoading || (searchError !== null && sorted.length === 0) ? [] : sorted}
         keyExtractor={r => r.id}
         contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
-          <View>
-            <RouteCard
-              route={item}
-              onPress={() => {
-                setSelectedRoute(item);
-                trackRouteSearch(origin?.name ?? '', destination?.name ?? '');
-                navigation.navigate('RouteResults', { origin: origin!, destination: destination! });
-              }}
-            />
-            <View style={styles.notifyRow}>
-              <Chip
-                icon={notifiedRouteId === item.id ? 'bell-check' : 'bell-outline'}
-                onPress={async () => {
-                  await scheduleArrivalNotification(item);
-                  setNotifiedRouteId(item.id);
-                }}
-                compact
-                style={[styles.notifyChip, notifiedRouteId === item.id && { backgroundColor: theme.colors.primaryContainer }]}
-              >
-                {notifiedRouteId === item.id ? 'Bildirim ayarlandı' : `${item.lineNumber} hattı gelince bildir`}
-              </Chip>
-            </View>
-          </View>
-        )}
+        renderItem={renderRoute}
+        removeClippedSubviews
+        maxToRenderPerBatch={4}
+        windowSize={5}
+        initialNumToRender={3}
         ListEmptyComponent={
           !isLoading ? (
             <View style={styles.empty}>

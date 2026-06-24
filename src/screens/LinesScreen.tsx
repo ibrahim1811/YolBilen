@@ -162,6 +162,10 @@ export function LinesScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         stickySectionHeadersEnabled
+        removeClippedSubviews
+        maxToRenderPerBatch={15}
+        windowSize={7}
+        initialNumToRender={20}
       />
     </SafeAreaView>
   );

@@ -335,7 +335,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
   const line1Candidates = getLinesNearOrigin(
     { lat: origin.latitude, lon: origin.longitude },
     WALK_NORMAL_M / 1000
-  );
+  ).slice(0, 10); // en fazla 10 hat dene — daha fazlası azalan kazanım
 
   for (const line1 of line1Candidates) {
     if (results.length >= 3) break;
@@ -360,7 +360,8 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
 
     const board1Stop = line1Stops[boardIdx];
 
-    for (let midIdx = boardIdx + 2; midIdx < line1Stops.length; midIdx++) {
+    const midSearchEnd = Math.min(boardIdx + 16, line1Stops.length);
+    for (let midIdx = boardIdx + 2; midIdx < midSearchEnd; midIdx++) {
       if (results.length >= 3) break;
       const midStop = line1Stops[midIdx];
 

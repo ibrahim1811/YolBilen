@@ -11,7 +11,7 @@ interface Props {
   onPress: () => void;
 }
 
-export function RouteCard({ route, onPress }: Props) {
+function RouteCardInner({ route, onPress }: Props) {
   const theme = useTheme();
 
   return (
@@ -126,6 +126,8 @@ export function RouteCard({ route, onPress }: Props) {
     </TouchableOpacity>
   );
 }
+
+export const RouteCard = React.memo(RouteCardInner);
 
 const styles = StyleSheet.create({
   card: {

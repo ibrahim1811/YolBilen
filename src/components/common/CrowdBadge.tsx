@@ -14,7 +14,7 @@ interface Props {
   level: CrowdLevel;
 }
 
-export function CrowdBadge({ level }: Props) {
+export const CrowdBadge = React.memo(function CrowdBadge({ level }: Props) {
   const { label, icon, color } = config[level];
   return (
     <Chip
@@ -25,7 +25,7 @@ export function CrowdBadge({ level }: Props) {
       {label}
     </Chip>
   );
-}
+});
 
 const styles = StyleSheet.create({
   chip: {

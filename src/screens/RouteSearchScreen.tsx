@@ -57,7 +57,10 @@ export function RouteSearchScreen({ navigation }: Props) {
     findRoutes(origin, destination, { allowLongWalk })
       .then(async r => {
         if (cancelled) return;
-        if (r.length > 0) void saveRouteCache(origin, destination, r);
+        if (r.length > 0) {
+          const hasLive = r.some(route => (route.confidence ?? 0) > 70);
+          void saveRouteCache(origin, destination, r, hasLive ? 'realtime' : 'static');
+        }
         setRoutes(r);
       })
       .catch(async () => {
@@ -130,7 +133,7 @@ export function RouteSearchScreen({ navigation }: Props) {
               setSearchError(null);
               setLoading(true);
               findRoutes(origin, destination, { allowLongWalk })
-                .then(r => { if (r.length > 0) void saveRouteCache(origin, destination, r); setRoutes(r); })
+                .then(r => { if (r.length > 0) { const hasLive = r.some(x => (x.confidence ?? 0) > 70); void saveRouteCache(origin, destination, r, hasLive ? 'realtime' : 'static'); } setRoutes(r); })
                 .catch(() => setSearchError('Rotalar yüklenemedi. İnternet bağlantınızı kontrol edin.'))
                 .finally(() => setLoading(false));
             }

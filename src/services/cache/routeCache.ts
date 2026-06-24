@@ -1,15 +1,19 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Route, Location } from '../../types';
 
-const CACHE_KEY = 'route_cache_v1';
+const CACHE_KEY = 'route_cache_v2';
 const MAX_ENTRIES = 10;
-const TTL_MS = 30 * 60 * 1000;
+const TTL_REALTIME_MS = 5 * 60 * 1000;
+const TTL_STATIC_MS = 30 * 60 * 1000;
+
+type CacheType = 'realtime' | 'static';
 
 interface CacheEntry {
   originName: string;
   destinationName: string;
   routes: Route[];
   savedAt: number;
+  cacheType: CacheType;
 }
 
 async function readAll(): Promise<CacheEntry[]> {
@@ -26,13 +30,14 @@ async function writeAll(entries: CacheEntry[]): Promise<void> {
 export async function saveRouteCache(
   origin: Location,
   destination: Location,
-  routes: Route[]
+  routes: Route[],
+  cacheType: CacheType = 'static'
 ): Promise<void> {
   const all = await readAll();
   const filtered = all.filter(
     e => !(e.originName === origin.name && e.destinationName === destination.name)
   );
-  filtered.unshift({ originName: origin.name, destinationName: destination.name, routes, savedAt: Date.now() });
+  filtered.unshift({ originName: origin.name, destinationName: destination.name, routes, savedAt: Date.now(), cacheType });
   await writeAll(filtered.slice(0, MAX_ENTRIES));
 }
 
@@ -44,6 +49,8 @@ export async function loadRouteCache(
   const entry = all.find(
     e => e.originName === origin.name && e.destinationName === destination.name
   );
-  if (!entry || Date.now() - entry.savedAt > TTL_MS) return null;
+  if (!entry) return null;
+  const ttl = entry.cacheType === 'realtime' ? TTL_REALTIME_MS : TTL_STATIC_MS;
+  if (Date.now() - entry.savedAt > ttl) return null;
   return entry.routes;
 }

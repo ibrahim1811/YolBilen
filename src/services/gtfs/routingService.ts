@@ -1,4 +1,4 @@
-import type { Route, Location, CrowdLevel, RouteStop, RouteStep, RouteFilterMode, SunAnalysis } from '../../types';
+import type { Route, Location, CrowdLevel, RouteStop, RouteStep, RouteFilterMode, SunAnalysis, RouteScoreWeights } from '../../types';
 import {
   findBoardAlightPair,
   getLinesNearOrigin,
@@ -14,6 +14,15 @@ import { hasSchedule } from '../../data/scheduleData';
 const WALK_NORMAL_M = 700;
 const WALK_EXTENDED_M = 1200;
 const TRANSFER_WALK_M = 600;
+
+const SCORE_WEIGHTS: Record<RouteFilterMode, RouteScoreWeights> = {
+  fastest:         { duration: 60, walk: 15, transfer: 15, crowd: 5,  sun: 5  },
+  comfortable:     { duration: 25, walk: 15, transfer: 15, crowd: 25, sun: 20 },
+  cool:            { duration: 20, walk: 10, transfer: 10, crowd: 20, sun: 40 },
+  least_transfers: { duration: 20, walk: 10, transfer: 60, crowd: 5,  sun: 5  },
+  night_safe:      { duration: 20, walk: 35, transfer: 35, crowd: 5,  sun: 5  },
+};
+const DEFAULT_WEIGHTS = SCORE_WEIGHTS.fastest;
 
 function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const R = 6371;
@@ -154,18 +163,20 @@ function calcRouteScore(
   walkMeters: number,
   transferCount: number,
   crowdLevel: CrowdLevel,
-  sunAnalysis: SunAnalysis | undefined
+  sunAnalysis: SunAnalysis | undefined,
+  weights: RouteScoreWeights = DEFAULT_WEIGHTS
 ): number {
   const crowdPenalty: Record<CrowdLevel, number> = { low: 0, medium: 5, high: 15, very_high: 30 };
   const sunPenalty = sunAnalysis
     ? Math.max(sunAnalysis.leftPercentage, sunAnalysis.rightPercentage) - 50
     : 0;
+  const w = weights;
   return (
-    estimatedDuration * 0.4 +
-    (walkMeters / 1000) * 20 * 0.2 +
-    transferCount * 15 * 0.2 +
-    crowdPenalty[crowdLevel] * 0.1 +
-    Math.max(0, sunPenalty) * 0.1
+    estimatedDuration        * (w.duration  / 100) +
+    (walkMeters / 1000) * 20 * (w.walk      / 100) +
+    transferCount * 15       * (w.transfer  / 100) +
+    crowdPenalty[crowdLevel] * (w.crowd     / 100) +
+    Math.max(0, sunPenalty)  * (w.sun       / 100)
   );
 }
 
@@ -180,8 +191,9 @@ function calcConfidence(hasLiveData: boolean, totalReports: number): number {
 export async function findRoutes(
   origin: Location,
   destination: Location,
-  options: { allowLongWalk?: boolean } = {}
+  options: { allowLongWalk?: boolean; filterMode?: RouteFilterMode } = {}
 ): Promise<Route[]> {
+  const weights = options.filterMode ? SCORE_WEIGHTS[options.filterMode] : DEFAULT_WEIGHTS;
   const maxWalkM = options.allowLongWalk ? WALK_EXTENDED_M : WALK_NORMAL_M;
   const maxWalkKm = maxWalkM / 1000;
 
@@ -241,7 +253,7 @@ export async function findRoutes(
     const estimatedDuration = steps.reduce((s, st) => s + st.durationMins, 0);
     const walkMeters = steps.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0);
     const sunAnalysis = sunAnalysisForSteps(steps, origin, destination, lineNum, pair!.dir);
-    const score = calcRouteScore(estimatedDuration, walkMeters, 0, crowdLevel, sunAnalysis);
+    const score = calcRouteScore(estimatedDuration, walkMeters, 0, crowdLevel, sunAnalysis, weights);
     const confidence = calcConfidence(hasLiveData, 0);
 
     results.push({

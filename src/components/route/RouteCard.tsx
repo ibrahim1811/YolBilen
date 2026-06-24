@@ -3,6 +3,7 @@ import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { Text, Surface, useTheme, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CrowdBadge } from '../common/CrowdBadge';
+import { minsToArrivalLabel } from '../../services/firebase/scheduleService';
 import type { Route } from '../../types';
 
 interface Props {
@@ -39,8 +40,8 @@ export function RouteCard({ route, onPress }: Props) {
                 color={theme.colors.primary}
                 style={styles.icon}
               />
-              <Text style={[styles.arrival, { color: theme.colors.primary }]}>
-                {route.nextArrival} dk sonra
+              <Text style={[styles.arrival, { color: route.nextArrival >= 999 ? theme.colors.onSurfaceVariant : theme.colors.primary }]}>
+                {route.nextArrival >= 999 ? 'Bugün sefer yok' : route.nextArrival <= 1 ? 'Şimdi geliyor' : `${minsToArrivalLabel(route.nextArrival)} sonra`}
               </Text>
             </View>
           </View>

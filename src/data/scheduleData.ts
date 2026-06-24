@@ -3,9 +3,9 @@ import SCHEDULES from './schedules.json';
 type ServiceType = 'weekday' | 'saturday' | 'sunday';
 type Dir = '0' | '1';
 
-const data = SCHEDULES as Record<string, Partial<Record<ServiceType, Partial<Record<Dir, string[]>>>>>;
+const data = SCHEDULES as Record<string, Partial<Record<ServiceType, Partial<Record<Dir, number[]>>>>>;
 
-export function getSchedule(lineNumber: string, serviceType: ServiceType = 'weekday'): { dir0: string[]; dir1: string[] } {
+export function getSchedule(lineNumber: string, serviceType: ServiceType = 'weekday'): { dir0: number[]; dir1: number[] } {
   const line = data[lineNumber] ?? data[lineNumber.replace(/^0+/, '')];
   if (!line) return { dir0: [], dir1: [] };
   const svc = line[serviceType] ?? line['weekday'] ?? {};

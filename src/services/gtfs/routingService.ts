@@ -8,7 +8,7 @@ import {
 } from '../../data/gtfsData';
 import { getCachedSunAnalysis } from '../sun/sunCache';
 import { getNextArrivalMins } from '../firebase/scheduleService';
-import { getApproachingBuses, nearestIztekStopId, minsFromRemainingStops } from '../iztek/iztekService';
+import { getApproachingBuses, nearestIztekStopId, bestIztekStopId, minsFromRemainingStops } from '../iztek/iztekService';
 import { hasSchedule } from '../../data/scheduleData';
 
 const WALK_NORMAL_M = 700;
@@ -125,9 +125,12 @@ async function liveNextArrival(
   lineNum: string,
   lat: number,
   lon: number,
-  dir: 0 | 1
+  dir: 0 | 1,
+  boardStopId?: string
 ): Promise<number> {
-  const iztekId = nearestIztekStopId(lat, lon);
+  const iztekId = boardStopId
+    ? bestIztekStopId(lat, lon, lineNum, dir, boardStopId)
+    : nearestIztekStopId(lat, lon);
   if (iztekId) {
     try {
       const buses = await getApproachingBuses(iztekId, dir);
@@ -211,7 +214,7 @@ export async function findRoutes(
 
   const crowdLevels = valid.map(({ lineNum }) => getCrowdLevel());
   const arrivals = await Promise.all(valid.map(({ pair, lineNum }) =>
-    liveNextArrival(lineNum, pair!.board.lat, pair!.board.lon, pair!.dir)
+    liveNextArrival(lineNum, pair!.board.lat, pair!.board.lon, pair!.dir, pair!.board.id)
   ));
 
   const results: Route[] = [];
@@ -357,8 +360,8 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
         const crowd1 = getCrowdLevel();
         const crowd2 = getCrowdLevel();
         const [arr1, arr2] = await Promise.all([
-          liveNextArrival(line1, board1Stop.lat, board1Stop.lon, dir1),
-          liveNextArrival(line2, pair2.board.lat, pair2.board.lon, pair2.dir),
+          liveNextArrival(line1, board1Stop.lat, board1Stop.lon, dir1, board1Stop.id),
+          liveNextArrival(line2, pair2.board.lat, pair2.board.lon, pair2.dir, pair2.board.id),
         ]);
 
         // Redundant 0-mesafe yürüyüş adımlarını çıkar

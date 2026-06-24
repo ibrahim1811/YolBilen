@@ -1,3 +1,5 @@
+import { getOrderedStopsForDir, getStopIndex } from '../../data/gtfsData';
+
 const BASE = 'https://openapi.izmir.bel.tr/api/iztek';
 const MINS_PER_STOP = 1.5;
 const BUS_SPEED_KMH = 22;
@@ -74,6 +76,64 @@ function distKm(aLat: number, aLon: number, bLat: number, bLon: number): number 
 export function nearestIztekStopId(lat: number, lon: number): number | null {
   const result = kdNearest(getKDTree(), lat, lon);
   return result.dist < 0.2 ? result.id : null;
+}
+
+function kdNearestN(
+  root: KDNode | null,
+  lat: number,
+  lon: number,
+  n: number,
+  maxDistKm: number
+): Array<{ id: number; lat: number; lon: number; dist: number }> {
+  const results: Array<{ id: number; lat: number; lon: number; dist: number }> = [];
+  function search(node: KDNode | null, depth: number): void {
+    if (!node) return;
+    const d = distKm(lat, lon, node.lat, node.lon);
+    if (d <= maxDistKm) results.push({ id: node.id, lat: node.lat, lon: node.lon, dist: d });
+    const axis = depth % 2 === 0 ? 'lat' : 'lon';
+    const diff = axis === 'lat' ? lat - node.lat : lon - node.lon;
+    const axialDist = Math.abs(diff) * (axis === 'lat' ? 111 : 111 * Math.cos(lat * Math.PI / 180));
+    const [near, far] = diff < 0 ? [node.left, node.right] : [node.right, node.left];
+    search(near, depth + 1);
+    if (axialDist < maxDistKm) search(far, depth + 1);
+  }
+  search(root, 0);
+  return results.sort((a, b) => a.dist - b.dist).slice(0, n);
+}
+
+export function bestIztekStopId(
+  lat: number,
+  lon: number,
+  lineNum: string,
+  dir: 0 | 1,
+  boardStopId: string
+): number | null {
+  const candidates = kdNearestN(getKDTree(), lat, lon, 5, 0.5);
+  if (candidates.length === 0) return null;
+
+  const orderedStops = getOrderedStopsForDir(lineNum, dir);
+  const stopIdx = getStopIndex();
+  const boardIdx = orderedStops.findIndex(s => s.id === boardStopId);
+
+  const scored = candidates.map(c => {
+    const gtfsMatch = orderedStops.find(s => {
+      const gs = stopIdx.get(s.id);
+      return gs && distKm(gs.lat, gs.lon, c.lat, c.lon) < 0.05;
+    });
+    const seqIdx = gtfsMatch ? orderedStops.findIndex(s => s.id === gtfsMatch.id) : -1;
+    const sequenceScore = seqIdx >= 0 && boardIdx >= 0
+      ? Math.max(0, 1 - Math.abs(seqIdx - boardIdx) / Math.max(orderedStops.length, 1))
+      : 0;
+    return { id: c.id, distKm: c.dist, sequenceScore };
+  });
+
+  const best = scored.sort((a, b) => {
+    const sA = (1 - Math.min(a.distKm / 0.5, 1)) * 0.6 + a.sequenceScore * 0.4;
+    const sB = (1 - Math.min(b.distKm / 0.5, 1)) * 0.6 + b.sequenceScore * 0.4;
+    return sB - sA;
+  })[0];
+
+  return best.distKm < 0.3 ? best.id : null;
 }
 
 export interface ApproachingBus {

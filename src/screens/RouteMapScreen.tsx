@@ -19,8 +19,9 @@ function buildMapHtml(params: {
   center: [number, number];
   steps?: RouteStep[];
   busPositions?: BusPosition[];
+  sunAnalysis?: SunAnalysis | null;
 }): string {
-  const { boarding, alighting, center, steps, busPositions = [] } = params;
+  const { boarding, alighting, center, steps, busPositions = [], sunAnalysis } = params;
   const transitSteps = steps?.filter(s => s.type === 'transit') ?? [];
   const transitStep = transitSteps[0] ?? null;
   const midStops = transitStep?.intermediateStops ?? [];
@@ -157,7 +158,16 @@ function buildMapHtml(params: {
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 var map=L.map('map',{zoomControl:true});
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap',maxZoom:19}).addTo(map);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap &copy; CARTO',maxZoom:19}).addTo(map);
+${sunAnalysis ? `
+var sunCtrl=L.control({position:'topright'});
+sunCtrl.onAdd=function(){
+  var d=L.DomUtil.create('div');
+  d.style='background:rgba(255,255,255,0.92);padding:8px 12px;border-radius:10px;font-size:13px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,0.2);line-height:1.5;';
+  d.innerHTML='☀️ Güneş: <b>${sunAnalysis.recommendedSide === 'left' ? 'SAĞ tarafta' : 'SOL tarafta'}</b><br><span style="font-weight:400;font-size:11px;">${sunAnalysis.recommendedSide === 'left' ? '← Sol tarafa oturun' : '→ Sağ tarafa oturun'}</span>';
+  return d;
+};
+sunCtrl.addTo(map);` : ''}
 
 var userIcon=L.divIcon({html:'<div style="background:#1A73E8;border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 2px 8px rgba(0,0,0,0.5)"></div>',iconSize:[18,18],iconAnchor:[9,9],className:''});
 var destIcon=L.divIcon({html:'<div style="background:#9C27B0;border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 2px 8px rgba(0,0,0,0.5)"></div>',iconSize:[18,18],iconAnchor:[9,9],className:''});
@@ -233,8 +243,9 @@ export function RouteMapScreen({ navigation, route: navRoute }: Props) {
         center,
         steps: route.steps,
         busPositions,
+        sunAnalysis: liveSunAnalysis ?? route.sunAnalysis,
       }),
-    [boarding, alighting, center, route.steps, busPositions]
+    [boarding, alighting, center, route.steps, busPositions, liveSunAnalysis, route.sunAnalysis]
   );
 
   return (

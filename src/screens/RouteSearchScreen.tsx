@@ -1,10 +1,9 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { trackScreenView, trackRouteSearch } from '../services/telemetry/telemetryService';
 import { View, StyleSheet, FlatList, ScrollView } from 'react-native';
-import { Text, useTheme, Appbar, Chip } from 'react-native-paper';
+import { Text, useTheme, Appbar, Chip } from 'react-native-paper'; // Chip: filter chips için gerekli
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 import { RouteCard } from '../components/route/RouteCard';
 import { SkeletonCard } from '../components/common/SkeletonCard';
 import { ErrorView } from '../components/common/ErrorView';
@@ -24,25 +23,10 @@ const FILTERS: { mode: RouteFilterMode; label: string; icon: string }[] = [
   { mode: 'night_safe', label: 'Gece Güvenli', icon: 'shield-moon' },
 ];
 
-async function scheduleArrivalNotification(route: Route) {
-  const { status } = await Notifications.requestPermissionsAsync();
-  if (status !== 'granted') return;
-  const mins = Math.max(1, route.nextArrival - 2);
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: `Hat ${route.lineNumber} geliyor!`,
-      body: `${route.lineNumber} hattı yaklaşık 2 dakika içinde ${route.boardingStop?.name ?? 'durağınıza'} ulaşacak.`,
-      sound: true,
-    },
-    trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: mins * 60 },
-  });
-}
-
 export function RouteSearchScreen({ navigation }: Props) {
   const theme = useTheme();
   const { origin, destination, routes, setRoutes, setSelectedRoute, isLoading, setLoading, allowLongWalk } = useAppStore();
   const [filterMode, setFilterMode] = useState<RouteFilterMode>('fastest');
-  const [notifiedRouteId, setNotifiedRouteId] = useState<string | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const h = new Date().getHours();
   const isNight = h >= 22 || h < 6;
@@ -82,30 +66,15 @@ export function RouteSearchScreen({ navigation }: Props) {
   const sorted = useMemo(() => sortRoutes(routes, filterMode), [routes, filterMode]);
 
   const renderRoute = useCallback(({ item }: { item: Route }) => (
-    <View>
-      <RouteCard
-        route={item}
-        onPress={() => {
-          setSelectedRoute(item);
-          trackRouteSearch(origin?.name ?? '', destination?.name ?? '');
-          navigation.navigate('RouteResults', { origin: origin!, destination: destination! });
-        }}
-      />
-      <View style={styles.notifyRow}>
-        <Chip
-          icon={notifiedRouteId === item.id ? 'bell-check' : 'bell-outline'}
-          onPress={async () => {
-            await scheduleArrivalNotification(item);
-            setNotifiedRouteId(item.id);
-          }}
-          compact
-          style={[styles.notifyChip, notifiedRouteId === item.id && { backgroundColor: '#E8F0FE' }]}
-        >
-          {notifiedRouteId === item.id ? 'Bildirim ayarlandı' : `${item.lineNumber} hattı gelince bildir`}
-        </Chip>
-      </View>
-    </View>
-  ), [notifiedRouteId, origin, destination, navigation, setSelectedRoute]);
+    <RouteCard
+      route={item}
+      onPress={() => {
+        setSelectedRoute(item);
+        trackRouteSearch(origin?.name ?? '', destination?.name ?? '');
+        navigation.navigate('RouteResults', { origin: origin!, destination: destination! });
+      }}
+    />
+  ), [origin, destination, navigation, setSelectedRoute]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -199,8 +168,6 @@ const styles = StyleSheet.create({
   filterChip: { marginRight: 4, height: 36 },
   filterChipSelected: { backgroundColor: '#E8F0FE' },
   list: { padding: 16, paddingTop: 4, gap: 4 },
-  notifyRow: { paddingHorizontal: 4, paddingBottom: 10 },
-  notifyChip: { alignSelf: 'flex-start' },
   empty: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyText: { fontSize: 16 },
 });

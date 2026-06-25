@@ -12,6 +12,9 @@ import { getApproachingBuses, nearestIztekStopId, bestIztekStopId, minsFromRemai
 import { hasSchedule } from '../../data/scheduleData';
 
 const WALK_NORMAL_M = 700;
+
+const withTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
+  Promise.race([p, new Promise<T>(r => setTimeout(() => r(fallback), ms))]);
 const WALK_EXTENDED_M = 1200;
 const TRANSFER_WALK_M = 600;
 
@@ -142,7 +145,7 @@ async function liveNextArrival(
     : nearestIztekStopId(lat, lon);
   if (iztekId) {
     try {
-      const buses = await getApproachingBuses(iztekId, dir);
+      const buses = await withTimeout(getApproachingBuses(iztekId, dir), 3000, []);
       const match = buses.find(b => String(b.hatNumarasi) === lineNum);
       if (match) return minsFromRemainingStops(match.kalanDurakSayisi);
     } catch {}
@@ -479,29 +482,41 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
   return results;
 }
 
+function getWalkMeters(r: Route): number {
+  return r.steps?.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0) ?? 0;
+}
+
 export function sortRoutes(routes: Route[], mode: RouteFilterMode): Route[] {
   switch (mode) {
     case 'fastest':
-      return [...routes].sort((a, b) => a.estimatedDuration - b.estimatedDuration);
+      return [...routes].sort((a, b) =>
+        a.estimatedDuration !== b.estimatedDuration
+          ? a.estimatedDuration - b.estimatedDuration
+          : getWalkMeters(a) - getWalkMeters(b)
+      );
     case 'comfortable': {
       const crowdOrder: Record<CrowdLevel, number> = { low: 0, medium: 1, high: 2, very_high: 3 };
-      return [...routes].sort((a, b) => crowdOrder[a.crowdLevel] - crowdOrder[b.crowdLevel]);
+      return [...routes].sort((a, b) => {
+        const c = crowdOrder[a.crowdLevel] - crowdOrder[b.crowdLevel];
+        return c !== 0 ? c : getWalkMeters(a) - getWalkMeters(b);
+      });
     }
     case 'cool':
-      // EKSİKLİK 4 fix: en az güneş maruziyeti = en serin
       return [...routes].sort((a, b) => {
         const sunA = a.sunAnalysis ? Math.max(a.sunAnalysis.leftPercentage, a.sunAnalysis.rightPercentage) : 50;
         const sunB = b.sunAnalysis ? Math.max(b.sunAnalysis.leftPercentage, b.sunAnalysis.rightPercentage) : 50;
-        return sunA - sunB;
+        const s = sunA - sunB;
+        return s !== 0 ? s : getWalkMeters(a) - getWalkMeters(b);
       });
     case 'least_transfers':
-      return [...routes].sort((a, b) => a.transfers.length - b.transfers.length);
-    case 'night_safe':
       return [...routes].sort((a, b) => {
-        const walkA = a.steps?.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0) ?? 0;
-        const walkB = b.steps?.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0) ?? 0;
-        return (a.transfers.length * 1000 + walkA) - (b.transfers.length * 1000 + walkB);
+        const t = a.transfers.length - b.transfers.length;
+        return t !== 0 ? t : getWalkMeters(a) - getWalkMeters(b);
       });
+    case 'night_safe':
+      return [...routes].sort((a, b) =>
+        (a.transfers.length * 1000 + getWalkMeters(a)) - (b.transfers.length * 1000 + getWalkMeters(b))
+      );
     default:
       return routes;
   }

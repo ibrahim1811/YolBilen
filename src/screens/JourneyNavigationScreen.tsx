@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, StyleSheet, Alert, ScrollView } from 'react-native';
-import { Text, Button, useTheme, Surface } from 'react-native-paper';
+import { Text, Button, useTheme, Surface, Appbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import * as Location from 'expo-location';
@@ -91,9 +91,9 @@ function buildNavHtml(steps?: RouteStep[], boarding?: Stop | null, alighting?: S
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 var map=L.map('map',{zoomControl:false});
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap',maxZoom:19}).addTo(map);
-var greenIcon=L.icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34]});
-var redIcon=L.icon({iconUrl:'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34]});
+L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap &copy; CARTO',maxZoom:19}).addTo(map);
+var greenIcon=L.divIcon({html:'<div style="background:#34A853;border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 2px 6px rgba(0,0,0,0.4)"></div>',iconSize:[18,18],iconAnchor:[9,9],className:''});
+var redIcon=L.divIcon({html:'<div style="background:#EA4335;border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 2px 6px rgba(0,0,0,0.4)"></div>',iconSize:[18,18],iconAnchor:[9,9],className:''});
 var userMarker=null;
 ${intermediateJs}
 ${walkLinesJs}
@@ -408,8 +408,23 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function handleCancel() {
+    Alert.alert(
+      'Yolculuğu İptal Et',
+      'Aktif yolculuğu iptal etmek istiyor musunuz?',
+      [
+        { text: 'Devam Et', style: 'cancel' },
+        { text: 'İptal Et', style: 'destructive', onPress: () => navigation.goBack() },
+      ]
+    );
+  }
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['top']}>
+      <Appbar.Header style={[styles.appbar, { backgroundColor: theme.colors.surface }]} elevated={false}>
+        <Appbar.Content title={`Hat ${route.lineNumber}`} titleStyle={styles.appbarTitle} />
+        <Appbar.Action icon="close-circle-outline" onPress={handleCancel} />
+      </Appbar.Header>
       <WebView
         ref={webRef}
         style={styles.map}
@@ -485,6 +500,8 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  appbar: { elevation: 0 },
+  appbarTitle: { fontSize: 16, fontWeight: '700' },
   map: { flex: 1 },
   panel: {
     borderTopLeftRadius: 20,

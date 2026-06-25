@@ -7,12 +7,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CrowdBadge } from '../components/common/CrowdBadge';
 import { SunSideCard } from '../components/sun/SunSideCard';
 import { ComfortScoreCard } from '../components/lines/ComfortScoreCard';
-import { AiSummaryCard } from '../components/route/AiSummaryCard';
 import { getLineComfortScore } from '../services/firebase/lineStats';
 import { useWeather } from '../hooks/useWeather';
 import type { ComfortScore, RouteStep } from '../types';
 import { useAppStore } from '../store/useAppStore';
-import { saveJourney } from '../services/firebase/journeyService';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 
@@ -21,41 +19,11 @@ type Props = NativeStackScreenProps<RootStackParamList, 'RouteResults'>;
 export function RouteResultScreen({ navigation }: Props) {
   const theme = useTheme();
   const selectedRoute = useAppStore((s) => s.selectedRoute);
-  const user = useAppStore((s) => s.user);
-  const origin = useAppStore((s) => s.origin);
-  const destination = useAppStore((s) => s.destination);
   const [comfortScore, setComfortScore] = React.useState<ComfortScore | null>(null);
   const weather = useWeather();
 
-  async function handleStartJourney() {
+  function handleStartJourney() {
     navigation.navigate('JourneyNavigation', { route: selectedRoute! });
-    if (user && !user.isGuest && selectedRoute && origin && destination) {
-      const now = new Date();
-      const distKm = Math.round(
-        (() => {
-          const R = 6371;
-          const dLat = ((destination.latitude - origin.latitude) * Math.PI) / 180;
-          const dLon = ((destination.longitude - origin.longitude) * Math.PI) / 180;
-          const s = Math.sin(dLat / 2) ** 2 +
-            Math.cos((origin.latitude * Math.PI) / 180) *
-            Math.cos((destination.latitude * Math.PI) / 180) *
-            Math.sin(dLon / 2) ** 2;
-          return R * 2 * Math.asin(Math.sqrt(s));
-        })() * 10
-      ) / 10;
-      saveJourney({
-        userId: user.uid,
-        lineNumber: selectedRoute.lineNumber,
-        lineName: selectedRoute.lineName,
-        originName: origin.name,
-        destinationName: destination.name,
-        durationMins: selectedRoute.estimatedDuration,
-        distanceKm: distKm,
-        timestamp: now,
-        dayOfWeek: now.getDay(),
-        hourOfDay: now.getHours(),
-      }).catch(() => {});
-    }
   }
 
   useEffect(() => { trackScreenView('RouteResult'); }, []);
@@ -166,12 +134,6 @@ export function RouteResultScreen({ navigation }: Props) {
             ))}
           </Surface>
         )}
-
-        <AiSummaryCard
-          route={selectedRoute}
-          weather={weather.data}
-          comfort={comfortScore}
-        />
 
         <Button
           mode="outlined"

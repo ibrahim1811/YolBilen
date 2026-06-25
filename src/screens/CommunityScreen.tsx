@@ -127,6 +127,10 @@ export function CommunityScreen() {
 
   async function handleSubmit() {
     if (!user || !selectedLine) return;
+    if (user.isGuest) {
+      setSnackbar('Geri bildirim göndermek için giriş yapmanız gerekiyor.');
+      return;
+    }
     setLoading(true);
     try {
       let feedbackLat: number | undefined;

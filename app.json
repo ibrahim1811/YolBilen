@@ -9,14 +9,14 @@
     "splash": {
       "image": "./assets/icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#1A73E8"
+      "backgroundColor": "#0A1628"
     },
     "android": {
       "package": "com.yolbilen.app",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1A73E8"
+        "backgroundColor": "#0A1628"
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",

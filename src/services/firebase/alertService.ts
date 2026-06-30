@@ -29,7 +29,6 @@ export const ALERT_EXPIRY_MINS: Record<CommunityAlert['type'], number> = {
 };
 
 export async function postAlert(alert: Omit<CommunityAlert, 'id' | 'upvotes'>): Promise<void> {
-  if (!auth.currentUser) throw new Error('auth/session-expired');
   await addDoc(collection(db, 'community_alerts'), {
     ...alert,
     createdAt: Timestamp.fromDate(alert.createdAt),

@@ -1,16 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Text, Surface, useTheme, Switch, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { scheduleLocalNotification } from '../../services/notifications/notificationService';
 import { t } from '../../i18n';
+import { useAppStore } from '../../store/useAppStore';
 import type { NotificationPrefs } from '../../types';
-
-const DEFAULT_PREFS: NotificationPrefs = {
-  busArrivals: true,
-  lineAlerts: true,
-  crowdAlerts: false,
-};
 
 interface PrefRowProps {
   icon: string;
@@ -35,36 +29,10 @@ function PrefRow({ icon, color, label, value, onChange }: PrefRowProps) {
 
 export function NotificationSettings() {
   const theme = useTheme();
-  const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
+  const { notificationPrefs, setNotificationPrefs } = useAppStore();
 
   function update(key: keyof NotificationPrefs, value: boolean) {
-    setPrefs((p) => ({ ...p, [key]: value }));
-
-    // Demo: bildirim göster
-    if (value) {
-      if (key === 'busArrivals') {
-        scheduleLocalNotification(
-          'YolBilen',
-          t('notif_bus_arriving')('25E', 3),
-          'arrivals',
-          2
-        );
-      } else if (key === 'lineAlerts') {
-        scheduleLocalNotification(
-          'YolBilen',
-          t('notif_line_issue')('34'),
-          'alerts',
-          2
-        );
-      } else if (key === 'crowdAlerts') {
-        scheduleLocalNotification(
-          'YolBilen',
-          t('notif_crowd_high')('T1'),
-          'alerts',
-          2
-        );
-      }
-    }
+    setNotificationPrefs({ ...notificationPrefs, [key]: value });
   }
 
   return (
@@ -82,7 +50,7 @@ export function NotificationSettings() {
         icon="bus-clock"
         color="#34A853"
         label={t('notif_bus_arrivals')}
-        value={prefs.busArrivals}
+        value={notificationPrefs.busArrivals}
         onChange={(v) => update('busArrivals', v)}
       />
       <Divider />
@@ -90,7 +58,7 @@ export function NotificationSettings() {
         icon="alert-circle-outline"
         color="#FBBC04"
         label={t('notif_line_alerts')}
-        value={prefs.lineAlerts}
+        value={notificationPrefs.lineAlerts}
         onChange={(v) => update('lineAlerts', v)}
       />
       <Divider />
@@ -98,7 +66,7 @@ export function NotificationSettings() {
         icon="account-group"
         color="#FF6D00"
         label={t('notif_crowd_alerts')}
-        value={prefs.crowdAlerts}
+        value={notificationPrefs.crowdAlerts}
         onChange={(v) => update('crowdAlerts', v)}
       />
     </Surface>

@@ -173,9 +173,7 @@ export function RouteResultScreen({ navigation }: Props) {
           </Surface>
         )}
 
-        {selectedRoute.sunAnalysis && (
-          <SunSideCard analysis={selectedRoute.sunAnalysis} />
-        )}
+        <SunSideCard analysis={selectedRoute.sunAnalysis ?? null} />
 
         {selectedRoute.hasIncompleteData && (
           <Surface style={[styles.infoAlert, { backgroundColor: '#FEF3C7' }]} elevation={0}>

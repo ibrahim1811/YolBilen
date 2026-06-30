@@ -1,12 +1,20 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { User, Location, Route, FavoriteLocation, FavoriteLine } from '../types';
+import type { User, Location, Route, FavoriteLocation, FavoriteLine, NotificationPrefs } from '../types';
+
+const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
+  busArrivals: true,
+  lineAlerts: true,
+  crowdAlerts: false,
+};
 
 interface AppState {
   user: User | null;
   isDarkMode: boolean;
   allowLongWalk: boolean;
+  nightSafeMode: boolean;
+  notificationPrefs: NotificationPrefs;
   origin: Location | null;
   destination: Location | null;
   routes: Route[];
@@ -19,6 +27,8 @@ interface AppState {
   setUser: (user: User | null) => void;
   toggleDarkMode: () => void;
   setAllowLongWalk: (v: boolean) => void;
+  toggleNightSafeMode: () => void;
+  setNotificationPrefs: (prefs: NotificationPrefs) => void;
   setOrigin: (location: Location | null) => void;
   setDestination: (destination: Location | null) => void;
   setRoutes: (routes: Route[]) => void;
@@ -39,6 +49,8 @@ export const useAppStore = create<AppState>()(
       user: null,
       isDarkMode: false,
       allowLongWalk: false,
+      nightSafeMode: true,
+      notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
       origin: null,
       destination: null,
       routes: [],
@@ -51,6 +63,8 @@ export const useAppStore = create<AppState>()(
       setUser: (user) => set({ user }),
       toggleDarkMode: () => set((s) => ({ isDarkMode: !s.isDarkMode })),
       setAllowLongWalk: (allowLongWalk) => set({ allowLongWalk }),
+      toggleNightSafeMode: () => set((s) => ({ nightSafeMode: !s.nightSafeMode })),
+      setNotificationPrefs: (notificationPrefs) => set({ notificationPrefs }),
       setOrigin: (origin) => set({ origin }),
       setDestination: (destination) => set({ destination }),
       setRoutes: (routes) => set({ routes }),
@@ -71,10 +85,23 @@ export const useAppStore = create<AppState>()(
     {
       name: 'yolbul-store',
       storage: createJSONStorage(() => AsyncStorage),
+      version: 1,
+      migrate: (persistedState: any, version: number) => {
+        if (version === 0) {
+          return {
+            ...persistedState,
+            nightSafeMode: true,
+            notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
+          };
+        }
+        return persistedState;
+      },
       partialize: (state) => ({
         user: state.user,
         isDarkMode: state.isDarkMode,
         allowLongWalk: state.allowLongWalk,
+        nightSafeMode: state.nightSafeMode,
+        notificationPrefs: state.notificationPrefs,
         favoriteLocations: state.favoriteLocations,
         favoriteLines: state.favoriteLines,
       }),

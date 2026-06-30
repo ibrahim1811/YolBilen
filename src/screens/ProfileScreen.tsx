@@ -16,7 +16,7 @@ import type { RootStackParamList } from '../types';
 export function ProfileScreen() {
   const theme = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { user, setUser, isDarkMode, toggleDarkMode, allowLongWalk, setAllowLongWalk } = useAppStore();
+  const { user, setUser, isDarkMode, toggleDarkMode, allowLongWalk, setAllowLongWalk, nightSafeMode, toggleNightSafeMode } = useAppStore();
   const [points, setPoints] = React.useState(user?.contributionPoints ?? 0);
   const [isAdmin, setIsAdmin] = React.useState(false);
 
@@ -135,6 +135,21 @@ export function ProfileScreen() {
               />
             )}
             right={() => <Switch value={isDarkMode} onValueChange={toggleDarkMode} />}
+          />
+          <Divider />
+          <List.Item
+            title="Gece Güvenlik Modu"
+            description="Gece 22:00-06:00 arası güvenli rota önceliği"
+            titleStyle={{ color: theme.colors.onSurface }}
+            left={() => (
+              <MaterialCommunityIcons
+                name="shield-moon"
+                size={22}
+                color={theme.colors.onSurfaceVariant}
+                style={{ marginLeft: 8, alignSelf: 'center' }}
+              />
+            )}
+            right={() => <Switch value={nightSafeMode} onValueChange={toggleNightSafeMode} />}
           />
           <Divider />
           <List.Item

@@ -5,16 +5,29 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { SunAnalysis } from '../../types';
 
 interface Props {
-  analysis: SunAnalysis;
+  analysis: SunAnalysis | null;
+}
+
+function getDefaultAnalysis(): SunAnalysis {
+  const hour = new Date().getHours();
+  // Sabah güneş doğuda (sağ), öğleden sonra batıda (sol)
+  const sunOnLeft = hour >= 13;
+  return {
+    recommendedSide: sunOnLeft ? 'right' : 'left',
+    leftPercentage: sunOnLeft ? 65 : 35,
+    rightPercentage: sunOnLeft ? 35 : 65,
+    description: sunOnLeft ? 'Öğleden sonra güneş sol tarafta' : 'Sabah güneş sağ tarafta',
+  };
 }
 
 export function SunSideCard({ analysis }: Props) {
   const theme = useTheme();
-  const sunOnRight = analysis.recommendedSide === 'left';
+  const data = analysis ?? getDefaultAnalysis();
+  const sunOnRight = data.recommendedSide === 'left';
   const hour = new Date().getHours();
   const timeLabel = hour < 12 ? 'sabah' : hour < 17 ? 'öğleden sonra' : 'akşam';
 
-  const sunnyPct = Math.max(analysis.leftPercentage, analysis.rightPercentage);
+  const sunnyPct = Math.max(data.leftPercentage, data.rightPercentage);
   const intensity = sunnyPct >= 75 ? 'Çok yoğun güneş' : sunnyPct >= 60 ? 'Orta güneş' : 'Hafif güneş';
   const intensityColor = sunnyPct >= 75 ? '#EF4444' : sunnyPct >= 60 ? '#F59E0B' : '#10B981';
 
@@ -28,9 +41,7 @@ export function SunSideCard({ analysis }: Props) {
         </View>
       </View>
 
-      {/* Bus diagram */}
       <View style={styles.diagram}>
-        {/* Sol güneş */}
         <View style={styles.sideCol}>
           {!sunOnRight && (
             <MaterialCommunityIcons name="weather-sunny" size={32} color="#FBBC04" />
@@ -43,22 +54,14 @@ export function SunSideCard({ analysis }: Props) {
           )}
         </View>
 
-        {/* Otobüs */}
         <View style={[styles.bus, { backgroundColor: theme.colors.primaryContainer }]}>
           <MaterialCommunityIcons name="bus-side" size={40} color={theme.colors.primary} />
           <View style={styles.seatRow}>
-            <View style={[
-              styles.seat,
-              { backgroundColor: !sunOnRight ? '#FEF3C7' : theme.colors.secondaryContainer },
-            ]} />
-            <View style={[
-              styles.seat,
-              { backgroundColor: sunOnRight ? '#FEF3C7' : theme.colors.secondaryContainer },
-            ]} />
+            <View style={[styles.seat, { backgroundColor: !sunOnRight ? '#FEF3C7' : theme.colors.secondaryContainer }]} />
+            <View style={[styles.seat, { backgroundColor: sunOnRight ? '#FEF3C7' : theme.colors.secondaryContainer }]} />
           </View>
         </View>
 
-        {/* Sağ güneş */}
         <View style={styles.sideCol}>
           {sunOnRight && (
             <MaterialCommunityIcons name="weather-sunny" size={32} color="#FBBC04" />
@@ -72,16 +75,16 @@ export function SunSideCard({ analysis }: Props) {
         </View>
       </View>
 
-      {/* Öneri */}
       <View style={[styles.recommendation, { backgroundColor: theme.colors.primaryContainer }]}>
         <MaterialCommunityIcons name="seat-passenger" size={18} color={theme.colors.primary} />
         <Text style={[styles.recommendText, { color: theme.colors.primary }]}>
-          {analysis.recommendedSide === 'left' ? 'Sol' : 'Sağ'} tarafa oturun — daha serin
+          {data.recommendedSide === 'left' ? 'Sol' : 'Sağ'} tarafa oturun — daha serin
         </Text>
       </View>
 
       <Text style={[styles.timeHint, { color: theme.colors.onSurfaceVariant }]}>
         {timeLabel.charAt(0).toUpperCase() + timeLabel.slice(1)} için hesaplandı
+        {!analysis && ' (tahmini)'}
       </Text>
     </Surface>
   );

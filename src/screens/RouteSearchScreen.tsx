@@ -26,6 +26,7 @@ const FILTERS: { mode: RouteFilterMode; label: string; icon: string }[] = [
 export function RouteSearchScreen({ navigation }: Props) {
   const theme = useTheme();
   const { origin, destination, routes, setRoutes, setSelectedRoute, isLoading, setLoading, allowLongWalk } = useAppStore();
+  const nightSafeMode = useAppStore(s => s.nightSafeMode);
   const [filterMode, setFilterMode] = useState<RouteFilterMode>('fastest');
   const [searchError, setSearchError] = useState<string | null>(null);
   const h = new Date().getHours();
@@ -81,7 +82,7 @@ export function RouteSearchScreen({ navigation }: Props) {
       <Appbar.Header style={{ backgroundColor: theme.colors.background }} elevated={false}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title="Rota Seçin" titleStyle={styles.headerTitle} />
-        {isNight && (
+        {isNight && nightSafeMode && (
           <MaterialCommunityIcons name="shield-moon" size={22} color={theme.colors.primary} style={{ marginRight: 12 }} />
         )}
       </Appbar.Header>

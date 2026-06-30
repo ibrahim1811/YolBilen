@@ -119,7 +119,7 @@ function WalkPanel({
   return (
     <View style={styles.phaseContainer}>
       <View style={styles.phaseHeader}>
-        <View style={[styles.phaseIconBg, { backgroundColor: '#E8F5E9' }]}>
+        <View style={[styles.phaseIconBg, { backgroundColor: '#34A85322' }]}>
           <MaterialCommunityIcons name="walk" size={28} color="#34A853" />
         </View>
         <View style={styles.phaseTextGroup}>
@@ -151,7 +151,7 @@ function WaitingPanel({
   return (
     <View style={styles.phaseContainer}>
       <View style={styles.phaseHeader}>
-        <View style={[styles.phaseIconBg, { backgroundColor: '#FFF3E0' }]}>
+        <View style={[styles.phaseIconBg, { backgroundColor: '#FB8C0022' }]}>
           <MaterialCommunityIcons name="bus-clock" size={28} color="#FB8C00" />
         </View>
         <View style={styles.phaseTextGroup}>

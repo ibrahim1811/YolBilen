@@ -36,6 +36,7 @@ export function HomeScreen() {
   const [showSunMap, setShowSunMap] = useState(false);
   const [sunGps, setSunGps] = useState<{ lat: number; lng: number } | null>(null);
   const weather = useWeather();
+  const nightSafeMode = useAppStore(s => s.nightSafeMode);
   const [routine, setRoutine] = useState<JourneyRecord | null>(null);
   const [crowdAlerts, setCrowdAlerts] = useState<CommunityAlert[]>([]);
   const h = new Date().getHours();
@@ -246,7 +247,7 @@ export function HomeScreen() {
         )}
 
         {/* Gece güvenlik modu banner */}
-        {isNight && (
+        {isNight && nightSafeMode && (
           <Surface style={[styles.infoCard, { backgroundColor: '#1A1A2E' }]} elevation={0}>
             <MaterialCommunityIcons name="shield-moon" size={24} color="#7986CB" />
             <View style={styles.infoText}>

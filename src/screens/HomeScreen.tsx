@@ -82,6 +82,22 @@ export function HomeScreen() {
     getActiveAlerts().then(a => setCrowdAlerts(a.slice(0, 3))).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          setSunGps({ lat: 38.4189, lng: 27.1287 });
+          return;
+        }
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setSunGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      } catch {
+        setSunGps({ lat: 38.4189, lng: 27.1287 });
+      }
+    })();
+  }, []);
+
   const disabledTypes = favoriteLocations
     .filter((l) => l.type !== 'custom')
     .map((l) => l.type) as FavoriteType[];
@@ -277,34 +293,39 @@ export function HomeScreen() {
           </Surface>
         )}
 
-        {/* Sun Info Banner */}
-        <TouchableOpacity
-          activeOpacity={0.75}
-          onPress={async () => {
-            try {
-              const { status } = await Location.requestForegroundPermissionsAsync();
-              if (status !== 'granted') return;
-              const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-              setSunGps({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-            } catch {
-              setSunGps({ lat: origin?.latitude ?? 38.4189, lng: origin?.longitude ?? 27.1287 });
-            }
-            setShowSunMap(true);
-          }}
-        >
-          <Surface style={[styles.infoCard, { backgroundColor: theme.colors.primaryContainer }]} elevation={0}>
-            <MaterialCommunityIcons name="white-balance-sunny" size={24} color={theme.colors.primary} />
-            <View style={styles.infoText}>
-              <Text style={[styles.infoTitle, { color: theme.colors.primary }]}>
-                Güneşi Gör
-              </Text>
-              <Text style={[styles.infoDesc, { color: theme.colors.onSurfaceVariant }]}>
-                Şu an güneş hangi yönde? Haritada görmek için dokun.
-              </Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.primary} />
-          </Surface>
-        </TouchableOpacity>
+        {/* Sun Info Banner — her zaman görünür, inline pusula */}
+        {sunGps && (() => {
+          const sp = SunCalc.getPosition(new Date(), sunGps.lat, sunGps.lng);
+          const az = ((sp.azimuth * 180) / Math.PI + 180 + 360) % 360;
+          const alt = (sp.altitude * 180) / Math.PI;
+          const below = alt <= 0;
+          const dirs = ['K', 'KD', 'D', 'GD', 'G', 'GB', 'B', 'KB'];
+          const cardinal = dirs[Math.round(az / 45) % 8];
+          return (
+            <TouchableOpacity activeOpacity={0.75} onPress={() => setShowSunMap(true)}>
+              <Surface style={[styles.infoCard, { backgroundColor: theme.colors.primaryContainer }]} elevation={0}>
+                <View style={{ transform: [{ rotate: `${az}deg` }] }}>
+                  <MaterialCommunityIcons
+                    name={below ? 'weather-night' : 'arrow-up-circle'}
+                    size={32}
+                    color={below ? '#7986CB' : '#FFA726'}
+                  />
+                </View>
+                <View style={styles.infoText}>
+                  <Text style={[styles.infoTitle, { color: theme.colors.primary }]}>
+                    {below ? 'Güneş battı' : `Güneş: ${cardinal} (${Math.round(az)}°)`}
+                  </Text>
+                  <Text style={[styles.infoDesc, { color: theme.colors.onSurfaceVariant }]}>
+                    {below
+                      ? 'Güneş ufkun altında'
+                      : `Yükseklik: ${Math.round(alt)}° · Haritada görmek için dokun`}
+                  </Text>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color={theme.colors.primary} />
+              </Surface>
+            </TouchableOpacity>
+          );
+        })()}
       </ScrollView>
 
       <LocationPickerModal

@@ -11,6 +11,7 @@ import { getLineScheduleFromFirestore, getScheduleForDay } from '../services/fir
 import { getOrderedStopsForDir } from '../data/gtfsData';
 import type { IzmirStop } from '../data/gtfsData';
 import { RecentFeedbackCard } from '../components/community/RecentFeedbackCard';
+import { LineRouteMapModal } from '../components/common/LineRouteMapModal';
 import { useFavorites } from '../hooks/useFavorites';
 import { useAppStore } from '../store/useAppStore';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -117,6 +118,7 @@ export function LineDetailScreen({ navigation, route }: Props) {
   }
 
   const isFav = isLineFavorited(lineNumber);
+  const [showRouteMap, setShowRouteMap] = React.useState(false);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -256,9 +258,18 @@ export function LineDetailScreen({ navigation, route }: Props) {
         {/* Durak Listesi */}
         {lineStops.length > 0 && (
           <Surface style={[styles.stopsCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-              Duraklar ({lineStops.length})
-            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
+                Duraklar ({lineStops.length})
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowRouteMap(true)}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 2, paddingHorizontal: 8, borderRadius: 8, backgroundColor: theme.colors.primaryContainer }}
+              >
+                <MaterialCommunityIcons name="map-outline" size={16} color={theme.colors.primary} />
+                <Text style={{ color: theme.colors.primary, fontSize: 12, fontWeight: '600' }}>Haritada Gör</Text>
+              </TouchableOpacity>
+            </View>
             {lineStops.map((stop, i) => {
               const isFirst = i === 0;
               const isLast = i === lineStops.length - 1;
@@ -310,6 +321,15 @@ export function LineDetailScreen({ navigation, route }: Props) {
           </View>
         )}
       </ScrollView>
+
+      {showRouteMap && (
+        <LineRouteMapModal
+          visible={showRouteMap}
+          lineNumber={lineNumber}
+          stops={lineStops}
+          onDismiss={() => setShowRouteMap(false)}
+        />
+      )}
     </SafeAreaView>
   );
 }

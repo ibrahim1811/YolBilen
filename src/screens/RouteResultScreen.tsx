@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import SunCalc from 'suncalc';
 import { trackScreenView } from '../services/telemetry/telemetryService';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, useTheme, Appbar, Surface, Divider, Button } from 'react-native-paper';
@@ -35,6 +36,12 @@ export function RouteResultScreen({ navigation }: Props) {
   }, [selectedRoute?.lineNumber]);
 
   if (!selectedRoute) return null;
+
+  const lat = selectedRoute.boardingStop?.latitude ?? 38.4192;
+  const lon = selectedRoute.boardingStop?.longitude ?? 27.1287;
+  const sunTimes = SunCalc.getTimes(new Date(), lat, lon);
+  const now = Date.now();
+  const isSunUp = now >= sunTimes.sunrise.getTime() && now <= sunTimes.sunset.getTime();
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
@@ -173,7 +180,7 @@ export function RouteResultScreen({ navigation }: Props) {
           </Surface>
         )}
 
-        <SunSideCard analysis={selectedRoute.sunAnalysis ?? null} />
+        {isSunUp && <SunSideCard analysis={selectedRoute.sunAnalysis ?? null} />}
 
         {selectedRoute.hasIncompleteData && (
           <Surface style={[styles.infoAlert, { backgroundColor: '#FEF3C7' }]} elevation={0}>

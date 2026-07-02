@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, StyleSheet, Alert, ScrollView, TouchableOpacity } from 'react-native';
 import { Text, Button, useTheme, Surface, Appbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
@@ -10,6 +10,7 @@ import type { RootStackParamList, RouteStep } from '../types';
 import { scheduleLocalNotification } from '../services/notifications/notificationService';
 import { saveJourney } from '../services/firebase/journeyService';
 import { useAppStore } from '../store/useAppStore';
+import { GamePlayModal } from '../components/games/GamePlayModal';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'JourneyNavigation'>;
 type Phase = 'walk' | 'waiting' | 'on_bus' | 'arrived';
@@ -279,8 +280,15 @@ function ArrivedPanel({
 export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) {
   const theme = useTheme();
   const user = useAppStore(s => s.user);
+  const incrementMissionProgress = useAppStore(s => s.incrementMissionProgress);
   const { route } = navRoute.params;
   const webRef = useRef<WebView>(null);
+  const [gameModalVisible, setGameModalVisible] = useState(false);
+
+  useEffect(() => {
+    incrementMissionProgress('journeyStarted', 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const transitStep = route.steps?.find(s => s.type === 'transit');
   const walkStep = route.steps?.find(s => s.type === 'walk');
@@ -435,6 +443,13 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
         mixedContentMode="always"
       />
 
+      <TouchableOpacity
+        style={[styles.gameFab, { backgroundColor: theme.colors.primary }]}
+        onPress={() => setGameModalVisible(true)}
+      >
+        <MaterialCommunityIcons name="gamepad-variant" size={26} color="#fff" />
+      </TouchableOpacity>
+
       <Surface style={[styles.panel, { backgroundColor: theme.colors.surface }]} elevation={4}>
         <View style={styles.panelHandle} />
 
@@ -494,6 +509,12 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
           />
         )}
       </Surface>
+
+      <GamePlayModal
+        visible={gameModalVisible}
+        gameId="game2048"
+        onDismiss={() => setGameModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -503,6 +524,21 @@ const styles = StyleSheet.create({
   appbar: { elevation: 0 },
   appbarTitle: { fontSize: 16, fontWeight: '700' },
   map: { flex: 1 },
+  gameFab: {
+    position: 'absolute',
+    right: 16,
+    bottom: '48%',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
   panel: {
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,

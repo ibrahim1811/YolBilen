@@ -9,7 +9,6 @@ import { getLineComfortScore } from '../services/firebase/lineStats';
 import { getLineFeedbacks } from '../services/firebase/firestore';
 import { getLineScheduleFromFirestore, getScheduleForDay } from '../services/firebase/scheduleService';
 import { getOrderedStopsForDir } from '../data/gtfsData';
-import type { IzmirStop } from '../data/gtfsData';
 import { RecentFeedbackCard } from '../components/community/RecentFeedbackCard';
 import { LineRouteMapModal } from '../components/common/LineRouteMapModal';
 import { useFavorites } from '../hooks/useFavorites';
@@ -28,40 +27,6 @@ function isRingRoute(name: string) {
   return /\bring\s*hat\b/.test(lower) || /\bhalka\s+hat\b/.test(lower);
 }
 
-function norm(s: string) {
-  return s.toLowerCase().replace(/[İI]/g, 'i').replace(/[Şş]/g, 's').replace(/[Ğğ]/g, 'g')
-    .replace(/[Üü]/g, 'u').replace(/[Öö]/g, 'o').replace(/[Çç]/g, 'c').replace(/\s+/g, ' ').trim();
-}
-
-function orderedLineStops(lineNumber: string, fromStop: string, toStop: string): IzmirStop[] {
-  const dir0 = getOrderedStopsForDir(lineNumber, 0);
-  const dir1 = getOrderedStopsForDir(lineNumber, 1);
-  const seen0 = new Set(dir0.map(s => s.id));
-  const all = [...dir0, ...dir1.filter(s => !seen0.has(s.id))];
-  if (all.length === 0) return [];
-
-  const qFrom = norm(fromStop);
-  const qTo = norm(toStop);
-  const start = all.find(s => norm(s.name).includes(qFrom) || qFrom.includes(norm(s.name)));
-  const end = toStop ? all.find(s => norm(s.name).includes(qTo) || qTo.includes(norm(s.name))) : undefined;
-
-  const anchor = start ?? all[0];
-  const tail = end ?? all[all.length - 1];
-  const dx = tail.lon - anchor.lon;
-  const dy = tail.lat - anchor.lat;
-  const len2 = dx * dx + dy * dy;
-  if (len2 === 0) return all;
-
-  const seen = new Set<string>();
-  return [...all]
-    .map(s => ({ s, t: ((s.lon - anchor.lon) * dx + (s.lat - anchor.lat) * dy) / len2 }))
-    .sort((a, b) => a.t - b.t)
-    .filter(({ s }) => {
-      const key = s.name.trim().toLowerCase();
-      return seen.has(key) ? false : (seen.add(key), true);
-    })
-    .map(x => x.s);
-}
 
 export function LineDetailScreen({ navigation, route }: Props) {
   const theme = useTheme();
@@ -81,7 +46,12 @@ export function LineDetailScreen({ navigation, route }: Props) {
   const [serviceType, setServiceType] = useState<'weekday' | 'saturday' | 'sunday'>('weekday');
   const [rawSchedule, setRawSchedule] = useState<import('../services/firebase/scheduleService').LineSchedule>({});
   const [scheduleLoading, setScheduleLoading] = useState(true);
-  const lineStops = React.useMemo(() => orderedLineStops(lineNumber, fromStop, toStop), [lineNumber, fromStop, toStop]);
+
+  const [dir, setDir] = useState<0 | 1>(0);
+  const dir0Stops = React.useMemo(() => getOrderedStopsForDir(lineNumber, 0), [lineNumber]);
+  const dir1Stops = React.useMemo(() => getOrderedStopsForDir(lineNumber, 1), [lineNumber]);
+  const lineStops = dir === 0 ? dir0Stops : dir1Stops;
+
   const hasOnlyWeekday = React.useMemo(
     () => rawSchedule.weekday != null && rawSchedule.saturday == null && rawSchedule.sunday == null,
     [rawSchedule]
@@ -270,6 +240,30 @@ export function LineDetailScreen({ navigation, route }: Props) {
                 <Text style={{ color: theme.colors.primary, fontSize: 12, fontWeight: '600' }}>Haritada Gör</Text>
               </TouchableOpacity>
             </View>
+
+            {dir1Stops.length > 0 && (
+              <View style={styles.dirRow}>
+                <TouchableOpacity
+                  onPress={() => setDir(0)}
+                  style={[styles.dirBtn, dir === 0 && { backgroundColor: theme.colors.primaryContainer }]}
+                >
+                  <MaterialCommunityIcons name="arrow-right-bold" size={14} color={dir === 0 ? theme.colors.primary : theme.colors.onSurfaceVariant} />
+                  <Text style={[styles.dirBtnText, { color: dir === 0 ? theme.colors.primary : theme.colors.onSurfaceVariant }]} numberOfLines={1}>
+                    {dir0Stops[0]?.name} → {dir0Stops[dir0Stops.length - 1]?.name}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setDir(1)}
+                  style={[styles.dirBtn, dir === 1 && { backgroundColor: theme.colors.primaryContainer }]}
+                >
+                  <MaterialCommunityIcons name="arrow-left-bold" size={14} color={dir === 1 ? theme.colors.primary : theme.colors.onSurfaceVariant} />
+                  <Text style={[styles.dirBtnText, { color: dir === 1 ? theme.colors.primary : theme.colors.onSurfaceVariant }]} numberOfLines={1}>
+                    {dir1Stops[0]?.name} → {dir1Stops[dir1Stops.length - 1]?.name}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
             {lineStops.map((stop, i) => {
               const isFirst = i === 0;
               const isLast = i === lineStops.length - 1;
@@ -362,6 +356,9 @@ const styles = StyleSheet.create({
   stopLabel: { fontSize: 11, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5 },
   stopName: { fontSize: 14, fontWeight: '600' },
   stopsCard: { borderRadius: 16, padding: 16, gap: 0 },
+  dirRow: { flexDirection: 'row', gap: 8, marginTop: 10, marginBottom: 6 },
+  dirBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6, paddingHorizontal: 8, borderRadius: 10 },
+  dirBtnText: { fontSize: 11, fontWeight: '600', flexShrink: 1 },
   stopRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, minHeight: 28 },
   stopTimeline: { alignItems: 'center', width: 12 },
   stopDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },

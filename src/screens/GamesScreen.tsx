@@ -10,6 +10,7 @@ import { getMissionDef } from '../services/games/dailyMissionService';
 import { redeemCode, addCoins } from '../services/firebase/coinService';
 import { GamePlayModal } from '../components/games/GamePlayModal';
 import { DemoAdLoadingModal } from '../components/common/DemoAdLoadingModal';
+import { BannerAdBox } from '../components/ads/BannerAdBox';
 import type { GameId } from '../types';
 
 const GAME_CARDS: { id: GameId; label: string; icon: string }[] = [
@@ -203,6 +204,8 @@ export function GamesScreen() {
           ))}
         </View>
       </ScrollView>
+
+      <BannerAdBox />
 
       <GamePlayModal visible={modalVisible} gameId={selectedGame} onDismiss={() => setModalVisible(false)} />
 

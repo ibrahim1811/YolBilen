@@ -1,6 +1,7 @@
 import React from 'react';
-import { View, StyleSheet, PanResponder, Dimensions } from 'react-native';
+import { View, StyleSheet, Dimensions } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 const SIZE = 4;
 const BOARD_WIDTH = Math.min(380, Dimensions.get('window').width - 40);
@@ -140,25 +141,31 @@ export function Game2048({ onScoreUpdate, onGameOver }: Props) {
     [onGameOver, onScoreUpdate]
   );
 
-  const panResponder = React.useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 10 || Math.abs(gesture.dy) > 10,
-      onPanResponderRelease: (_, gesture) => {
-        const { dx, dy } = gesture;
-        if (Math.abs(dx) > Math.abs(dy)) {
-          applyMove(dx > 0 ? 'right' : 'left');
-        } else {
-          applyMove(dy > 0 ? 'down' : 'up');
-        }
-      },
-    })
-  ).current;
+  // react-native-gesture-handler kullanılıyor — legacy PanResponder, uygulamayı saran
+  // GestureHandlerRootView ile çakışıp swipe'ları hiç almayabiliyor (New Architecture).
+  const applyMoveRef = React.useRef(applyMove);
+  applyMoveRef.current = applyMove;
+
+  const panGesture = React.useMemo(
+    () =>
+      Gesture.Pan()
+        .minDistance(10)
+        .onEnd((e) => {
+          const { translationX: dx, translationY: dy } = e;
+          if (Math.abs(dx) > Math.abs(dy)) {
+            applyMoveRef.current(dx > 0 ? 'right' : 'left');
+          } else {
+            applyMoveRef.current(dy > 0 ? 'down' : 'up');
+          }
+        }),
+    []
+  );
 
   return (
     <View style={styles.wrap}>
       <Text style={[styles.scoreText, { color: theme.colors.onSurface }]}>Skor: {score}</Text>
+      <GestureDetector gesture={panGesture}>
       <View
-        {...panResponder.panHandlers}
         style={[styles.board, { width: BOARD_WIDTH, backgroundColor: theme.colors.surfaceVariant }]}
       >
         {board.map((row, r) => (
@@ -183,6 +190,7 @@ export function Game2048({ onScoreUpdate, onGameOver }: Props) {
           </View>
         ))}
       </View>
+      </GestureDetector>
       <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>Kaydırarak birleştir</Text>
     </View>
   );

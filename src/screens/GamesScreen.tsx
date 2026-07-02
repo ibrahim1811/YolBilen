@@ -59,7 +59,7 @@ export function GamesScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
-      regenerateLives();
+      GAME_CARDS.forEach((g) => regenerateLives(g.id));
       initOrRotateDailyMissions();
     }, [regenerateLives, initOrRotateDailyMissions])
   );
@@ -124,13 +124,6 @@ export function GamesScreen() {
             <MaterialCommunityIcons name="cash" size={18} color="#e9b64a" />
             <Text style={[styles.coinText, { color: theme.colors.onSurface }]}>{user?.coins ?? 0}</Text>
           </View>
-        </View>
-
-        <View style={styles.livesRow}>
-          <MaterialCommunityIcons name="heart" size={16} color="#e63946" />
-          <Text style={[styles.livesText, { color: theme.colors.onSurfaceVariant }]}>
-            {gameLives}/{MAX_LIVES} can
-          </Text>
         </View>
 
         <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
@@ -215,6 +208,12 @@ export function GamesScreen() {
               <Text style={[styles.gameHighScore, { color: theme.colors.onSurfaceVariant }]}>
                 Rekor: {highScores[game.id] ?? 0}
               </Text>
+              <View style={styles.gameLivesRow}>
+                <MaterialCommunityIcons name="heart" size={12} color="#e63946" />
+                <Text style={[styles.gameLivesText, { color: theme.colors.onSurfaceVariant }]}>
+                  {gameLives[game.id]}/{MAX_LIVES}
+                </Text>
+              </View>
               <Button mode="contained" compact onPress={() => openGame(game.id)} style={{ borderRadius: 10 }}>
                 Oyna
               </Button>
@@ -244,8 +243,6 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '800' },
   coinBadge: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   coinText: { fontSize: 16, fontWeight: '700' },
-  livesRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  livesText: { fontSize: 13 },
   card: { borderRadius: 14, padding: 16, gap: 10 },
   sectionTitle: { fontSize: 16, fontWeight: '700' },
   rowGap: { gap: 8 },
@@ -264,4 +261,6 @@ const styles = StyleSheet.create({
   gameCard: { flex: 1, minWidth: '30%', borderRadius: 14, padding: 14, alignItems: 'center', gap: 6 },
   gameLabel: { fontSize: 14, fontWeight: '700' },
   gameHighScore: { fontSize: 12 },
+  gameLivesRow: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  gameLivesText: { fontSize: 11 },
 });

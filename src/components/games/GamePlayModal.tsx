@@ -47,29 +47,32 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
   const [msLeft, setMsLeft] = React.useState<number | null>(null);
   const playedGamesRef = React.useRef<Set<GameId>>(new Set());
 
-  const { isLoaded: rewardedAdLoaded, show: showRewardedAd } = useRewardedAdReward(grantLife);
+  const { isLoaded: rewardedAdLoaded, show: showRewardedAd } = useRewardedAdReward(
+    React.useCallback(() => { if (gameId) grantLife(gameId); }, [gameId, grantLife])
+  );
 
   React.useEffect(() => {
-    if (!visible) return;
-    regenerateLives();
+    if (!visible || !gameId) return;
+    regenerateLives(gameId);
     setLiveScore(0);
     setSessionKey((k) => k + 1);
   }, [visible, gameId, regenerateLives]);
 
   React.useEffect(() => {
-    if (!visible) return;
+    if (!visible || !gameId) return;
     const interval = setInterval(() => {
-      regenerateLives();
-      const remaining = msUntilNextLife(useAppStore.getState().gameLives, useAppStore.getState().lastLifeConsumedAt);
+      regenerateLives(gameId);
+      const state = useAppStore.getState();
+      const remaining = msUntilNextLife(state.gameLives[gameId], state.lastLifeConsumedAt[gameId]);
       setMsLeft(remaining);
     }, 1000);
     return () => clearInterval(interval);
-  }, [visible, regenerateLives]);
+  }, [visible, gameId, regenerateLives]);
 
   const handleGameOver = React.useCallback(
     (finalScore: number) => {
       if (!gameId) return;
-      consumeLife();
+      consumeLife(gameId);
       setHighScore(gameId, finalScore);
       playedGamesRef.current.add(gameId);
       incrementMissionProgress('playCount', 1);
@@ -101,6 +104,7 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
   }
 
   const secondsLeft = msLeft !== null ? Math.ceil(msLeft / 1000) : null;
+  const currentLives = gameId ? gameLives[gameId] : 0;
 
   return (
     <Portal>
@@ -109,7 +113,7 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <MaterialCommunityIcons name="heart" size={18} color="#e63946" />
-              <Text style={[styles.headerText, { color: theme.colors.onSurface }]}>{gameLives}/{MAX_LIVES}</Text>
+              <Text style={[styles.headerText, { color: theme.colors.onSurface }]}>{currentLives}/{MAX_LIVES}</Text>
               <Text style={[styles.headerText, { color: theme.colors.onSurfaceVariant, marginLeft: 12 }]}>
                 {gameId ? GAME_LABELS[gameId] : ''} · Skor: {liveScore}
               </Text>
@@ -118,7 +122,7 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
           </View>
 
           <View style={styles.body}>
-            {gameLives <= 0 ? (
+            {currentLives <= 0 ? (
               <View style={styles.noLives}>
                 <MaterialCommunityIcons name="heart-off-outline" size={40} color={theme.colors.onSurfaceVariant} />
                 <Text style={[styles.noLivesText, { color: theme.colors.onSurface }]}>Canların bitti</Text>

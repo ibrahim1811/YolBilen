@@ -26,6 +26,18 @@ const DEFAULT_HIGH_SCORES: Record<GameId, number> = {
   wordle: 0,
 };
 
+const DEFAULT_GAME_LIVES: Record<GameId, number> = {
+  game2048: MAX_LIVES,
+  flappy: MAX_LIVES,
+  wordle: MAX_LIVES,
+};
+
+const DEFAULT_LAST_LIFE_CONSUMED: Record<GameId, number | null> = {
+  game2048: null,
+  flappy: null,
+  wordle: null,
+};
+
 interface AppState {
   user: User | null;
   isDarkMode: boolean;
@@ -40,8 +52,8 @@ interface AppState {
   favoriteLocations: FavoriteLocation[];
   favoriteLines: FavoriteLine[];
   pendingFeedbackPlate: string | null;
-  gameLives: number;
-  lastLifeConsumedAt: number | null;
+  gameLives: Record<GameId, number>;
+  lastLifeConsumedAt: Record<GameId, number | null>;
   highScores: Record<GameId, number>;
   dailyMissions: DailyMissionState | null;
 
@@ -62,9 +74,9 @@ interface AppState {
   addFavoriteLine: (line: FavoriteLine) => void;
   removeFavoriteLine: (id: string) => void;
   setPendingFeedbackPlate: (plate: string | null) => void;
-  consumeLife: () => void;
-  regenerateLives: () => void;
-  grantLife: () => void;
+  consumeLife: (gameId: GameId) => void;
+  regenerateLives: (gameId: GameId) => void;
+  grantLife: (gameId: GameId) => void;
   setHighScore: (gameId: GameId, score: number) => void;
   addCoinsOptimistic: (amount: number) => void;
   initOrRotateDailyMissions: () => void;
@@ -88,8 +100,8 @@ export const useAppStore = create<AppState>()(
       favoriteLocations: [],
       favoriteLines: [],
       pendingFeedbackPlate: null,
-      gameLives: MAX_LIVES,
-      lastLifeConsumedAt: null,
+      gameLives: DEFAULT_GAME_LIVES,
+      lastLifeConsumedAt: DEFAULT_LAST_LIFE_CONSUMED,
       highScores: DEFAULT_HIGH_SCORES,
       dailyMissions: null,
 
@@ -115,20 +127,26 @@ export const useAppStore = create<AppState>()(
         set((s) => ({ favoriteLines: s.favoriteLines.filter((l) => l.id !== id) })),
       setPendingFeedbackPlate: (plate) => set({ pendingFeedbackPlate: plate }),
 
-      consumeLife: () =>
+      consumeLife: (gameId) =>
         set((s) => ({
-          gameLives: Math.max(0, s.gameLives - 1),
-          lastLifeConsumedAt: s.lastLifeConsumedAt ?? Date.now(),
+          gameLives: { ...s.gameLives, [gameId]: Math.max(0, s.gameLives[gameId] - 1) },
+          lastLifeConsumedAt: { ...s.lastLifeConsumedAt, [gameId]: s.lastLifeConsumedAt[gameId] ?? Date.now() },
         })),
-      regenerateLives: () =>
+      regenerateLives: (gameId) =>
         set((s) => {
-          const { lives, lastConsumedAt } = computeRegeneratedLives(s.gameLives, s.lastLifeConsumedAt);
-          return { gameLives: lives, lastLifeConsumedAt: lastConsumedAt };
+          const { lives, lastConsumedAt } = computeRegeneratedLives(s.gameLives[gameId], s.lastLifeConsumedAt[gameId]);
+          return {
+            gameLives: { ...s.gameLives, [gameId]: lives },
+            lastLifeConsumedAt: { ...s.lastLifeConsumedAt, [gameId]: lastConsumedAt },
+          };
         }),
-      grantLife: () =>
+      grantLife: (gameId) =>
         set((s) => {
-          const gameLives = Math.min(MAX_LIVES, s.gameLives + 1);
-          return { gameLives, lastLifeConsumedAt: gameLives >= MAX_LIVES ? null : s.lastLifeConsumedAt };
+          const lives = Math.min(MAX_LIVES, s.gameLives[gameId] + 1);
+          return {
+            gameLives: { ...s.gameLives, [gameId]: lives },
+            lastLifeConsumedAt: { ...s.lastLifeConsumedAt, [gameId]: lives >= MAX_LIVES ? null : s.lastLifeConsumedAt[gameId] },
+          };
         }),
       setHighScore: (gameId, score) =>
         set((s) => ({
@@ -179,7 +197,7 @@ export const useAppStore = create<AppState>()(
     {
       name: 'yolbul-store',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 2,
+      version: 3,
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
         if (version === 0) {
@@ -196,6 +214,14 @@ export const useAppStore = create<AppState>()(
             lastLifeConsumedAt: null,
             highScores: DEFAULT_HIGH_SCORES,
             dailyMissions: null,
+          };
+        }
+        if (version < 3) {
+          // gameLives/lastLifeConsumedAt tek sayıdan oyun başına Record'a geçti
+          state = {
+            ...state,
+            gameLives: DEFAULT_GAME_LIVES,
+            lastLifeConsumedAt: DEFAULT_LAST_LIFE_CONSUMED,
           };
         }
         return state;

@@ -46,7 +46,9 @@ function buildMapHtml(params: {
       `{color:'#757575',weight:3,dashArray:'6,8',opacity:0.7}).addTo(map);`;
   }
 
-  // Otobüs güzergahı — OSRM ile yol takip eden polyline
+  // Otobüs güzergahı — durak koordinatlarından doğrudan çizilen polyline
+  // (önceden OSRM demo sunucusuna bağımlıydı; o sunucu üretim için değil,
+  // sık zaman aşımına uğrayıp kesikli çizgiye düşüyordu)
   const transitCoords: [number, number][] = boardStop && alightStop
     ? [
         [boardStop.latitude, boardStop.longitude],
@@ -57,18 +59,8 @@ function buildMapHtml(params: {
       ? [[boarding.latitude, boarding.longitude], [alighting.latitude, alighting.longitude]]
       : [];
 
-  const osrmCoords = transitCoords.map(([lat, lon]) => `${lon},${lat}`).join(';');
-  const fallbackPts = JSON.stringify(transitCoords);
-
-  const osrmFetchJs = transitCoords.length >= 2
-    ? `fetch('https://router.project-osrm.org/route/v1/driving/${osrmCoords}?overview=full&geometries=geojson')` +
-      `.then(function(r){return r.json();})` +
-      `.then(function(data){` +
-      `if(data.routes&&data.routes[0]){` +
-      `var coords=data.routes[0].geometry.coordinates.map(function(c){return[c[1],c[0]];});` +
-      `L.polyline(coords,{color:'#1A73E8',weight:5,opacity:0.9,lineJoin:'round'}).addTo(map);` +
-      `}else{L.polyline(${fallbackPts},{color:'#1A73E8',weight:5,dashArray:'10,5'}).addTo(map);}` +
-      `}).catch(function(){L.polyline(${fallbackPts},{color:'#1A73E8',weight:5,dashArray:'10,5'}).addTo(map);});`
+  const routePolylineJs = transitCoords.length >= 2
+    ? `L.polyline(${JSON.stringify(transitCoords)},{color:'#1A73E8',weight:5,opacity:0.9,lineJoin:'round'}).addTo(map);`
     : '';
 
   // İkinci transit segment — aktarmalı rota (pembe)
@@ -80,17 +72,8 @@ function buildMapHtml(params: {
         [transit2.alightStop.latitude, transit2.alightStop.longitude],
       ]
     : [];
-  const osrm2Coords = transit2Coords.map(([lat, lon]) => `${lon},${lat}`).join(';');
-  const fallback2Pts = JSON.stringify(transit2Coords);
-  const osrm2FetchJs = transit2Coords.length >= 2
-    ? `fetch('https://router.project-osrm.org/route/v1/driving/${osrm2Coords}?overview=full&geometries=geojson')` +
-      `.then(function(r){return r.json();})` +
-      `.then(function(data){` +
-      `if(data.routes&&data.routes[0]){` +
-      `var c2=data.routes[0].geometry.coordinates.map(function(c){return[c[1],c[0]];});` +
-      `L.polyline(c2,{color:'#E91E63',weight:5,opacity:0.9,lineJoin:'round'}).addTo(map);` +
-      `}else{L.polyline(${fallback2Pts},{color:'#E91E63',weight:5,dashArray:'10,5'}).addTo(map);}` +
-      `}).catch(function(){L.polyline(${fallback2Pts},{color:'#E91E63',weight:5,dashArray:'10,5'}).addTo(map);});`
+  const route2PolylineJs = transit2Coords.length >= 2
+    ? `L.polyline(${JSON.stringify(transit2Coords)},{color:'#E91E63',weight:5,opacity:0.9,lineJoin:'round'}).addTo(map);`
     : '';
   const intermediate2Js = (transit2?.intermediateStops ?? [])
     .map(s =>
@@ -181,8 +164,8 @@ ${busMarkersJs}
 ${userBoardJs}
 ${userAlightJs}
 ${boundsJs}
-${osrmFetchJs}
-${osrm2FetchJs}
+${routePolylineJs}
+${route2PolylineJs}
 </script>
 </body>
 </html>`;

@@ -32,7 +32,12 @@ export function StopDetailScreen({ navigation, route }: Props) {
   const [countdown, setCountdown] = useState(30);
   const [hourlyData, setHourlyData] = useState<number[]>(new Array(24).fill(0));
 
-  const isFavorited = favoriteLocations.some((f) => f.location.name === stopName);
+  const isSameStop = (f: { location: { name: string; latitude: number; longitude: number } }) =>
+    f.location.name === stopName &&
+    Math.abs(f.location.latitude - latitude) < 0.0001 &&
+    Math.abs(f.location.longitude - longitude) < 0.0001;
+
+  const isFavorited = favoriteLocations.some(isSameStop);
 
   const loadArrivals = useCallback(async () => {
     const iztekId = nearestIztekStopId(latitude, longitude);
@@ -87,25 +92,29 @@ export function StopDetailScreen({ navigation, route }: Props) {
 
   async function handleRefresh() {
     setRefreshing(true);
-    loadArrivals();
+    await loadArrivals();
     setCountdown(30);
     setRefreshing(false);
   }
 
   async function handleToggleFavorite() {
-    if (isFavorited) {
-      const fav = favoriteLocations.find((f) => f.location.name === stopName);
-      if (fav) {
-        await removeLocation(fav.id);
-        setSnackbar(t('stop_remove_favorite'));
+    try {
+      if (isFavorited) {
+        const fav = favoriteLocations.find(isSameStop);
+        if (fav) {
+          await removeLocation(fav.id);
+          setSnackbar(t('stop_remove_favorite'));
+        }
+      } else {
+        await addLocation('custom', stopName, {
+          name: stopName,
+          latitude,
+          longitude,
+        });
+        setSnackbar(t('stop_favorited'));
       }
-    } else {
-      await addLocation('custom', stopName, {
-        name: stopName,
-        latitude,
-        longitude,
-      });
-      setSnackbar(t('stop_favorited'));
+    } catch {
+      setSnackbar('İşlem başarısız oldu. Tekrar deneyin.');
     }
   }
 

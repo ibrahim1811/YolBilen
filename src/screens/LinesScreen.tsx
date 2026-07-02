@@ -61,8 +61,8 @@ export function LinesScreen() {
 
   function handleToggleFavorite(lineNum: string, lineName: string) {
     const existing = favoriteLines.find(l => l.lineNumber === lineNum);
-    if (existing) removeLine(existing.id);
-    else addLine(lineNum, lineName);
+    if (existing) removeLine(existing.id).catch(() => {});
+    else addLine(lineNum, lineName).catch(() => {});
   }
 
   function renderLine(item: { lineNum: string; name: string }) {

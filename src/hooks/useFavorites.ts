@@ -22,38 +22,34 @@ export function useFavorites() {
   const removeLineStore = useAppStore((s) => s.removeFavoriteLine);
 
   useEffect(() => {
-    if (!user || user.isGuest) return;
+    if (!user || user.isGuest) {
+      setFavoriteLocations([]);
+      setFavoriteLines([]);
+      return;
+    }
     getUserFavoriteLocations(user.uid).then(setFavoriteLocations).catch(() => {});
     getUserFavoriteLines(user.uid).then(setFavoriteLines).catch(() => {});
-  }, [user?.uid]);
+  }, [user?.uid, user?.isGuest]);
 
   const addLocation = useCallback(
     async (type: FavoriteType, label: string, location: Location) => {
       if (!user) return;
-      try {
-        const created = await fsAddLocation(user.uid, type, label, location);
-        addLocStore(created);
-      } catch {
-        addLocStore({ id: `local-${Date.now()}`, userId: user.uid, type, label, location, createdAt: new Date() });
-      }
+      const created = await fsAddLocation(user.uid, type, label, location);
+      addLocStore(created);
     },
     [user]
   );
 
   const removeLocation = useCallback(async (id: string) => {
-    try { await fsRemoveLocation(id); } catch {}
+    await fsRemoveLocation(id);
     removeLocStore(id);
   }, []);
 
   const addLine = useCallback(
     async (lineNumber: string, lineName: string) => {
       if (!user) return;
-      try {
-        const created = await fsAddLine(user.uid, lineNumber, lineName);
-        addLineStore(created);
-      } catch {
-        addLineStore({ id: `local-${Date.now()}`, userId: user.uid, lineNumber, lineName, createdAt: new Date() });
-      }
+      const created = await fsAddLine(user.uid, lineNumber, lineName);
+      addLineStore(created);
     },
     [user]
   );

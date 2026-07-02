@@ -15,9 +15,13 @@ function tempScore(temp: Feedback['temperature']): number {
   return temp === 'cool' ? 10 : temp === 'normal' ? 7 : 3;
 }
 
+function normalizePlate(plate: string): string {
+  return plate.trim().toUpperCase().replace(/\s+/g, '');
+}
+
 export async function getBusCard(plate: string): Promise<BusCard | null> {
   try {
-    const snap = await getDoc(doc(db, 'bus_cards', plate));
+    const snap = await getDoc(doc(db, 'bus_cards', normalizePlate(plate)));
     if (!snap.exists()) return null;
     const d = snap.data();
     return { ...d, updatedAt: d.updatedAt?.toDate() ?? new Date() } as BusCard;
@@ -28,7 +32,7 @@ export async function getBusCard(plate: string): Promise<BusCard | null> {
 
 export async function updateBusCardFromFeedback(feedback: Feedback): Promise<void> {
   if (!feedback.plateNumber) return;
-  const plate = feedback.plateNumber.trim();
+  const plate = normalizePlate(feedback.plateNumber);
   if (!plate) return;
 
   const ref = doc(db, 'bus_cards', plate);

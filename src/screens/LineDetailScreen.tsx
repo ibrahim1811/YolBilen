@@ -83,8 +83,8 @@ export function LineDetailScreen({ navigation, route }: Props) {
 
   function handleToggleFavorite() {
     const existing = favoriteLines.find(l => l.lineNumber === lineNumber);
-    if (existing) removeLine(existing.id);
-    else addLine(lineNumber, lineName);
+    if (existing) removeLine(existing.id).catch(() => {});
+    else addLine(lineNumber, lineName).catch(() => {});
   }
 
   const isFav = isLineFavorited(lineNumber);

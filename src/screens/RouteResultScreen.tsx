@@ -31,7 +31,7 @@ export function RouteResultScreen({ navigation }: Props) {
 
   React.useEffect(() => {
     if (selectedRoute) {
-      getLineComfortScore(selectedRoute.lineNumber).then(setComfortScore);
+      getLineComfortScore(selectedRoute.lineNumber).then(setComfortScore).catch(() => setComfortScore(null));
     }
   }, [selectedRoute?.lineNumber]);
 

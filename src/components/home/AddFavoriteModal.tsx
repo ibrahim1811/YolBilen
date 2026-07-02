@@ -26,6 +26,7 @@ export function AddFavoriteModal({ visible, onDismiss, onAdd, disabledTypes = []
   const [customLabel, setCustomLabel] = useState('');
   const [showMap, setShowMap] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   function handleTypeSelect(type: FavoriteType, defaultLabel: string) {
     setSelectedType(type);
@@ -36,9 +37,12 @@ export function AddFavoriteModal({ visible, onDismiss, onAdd, disabledTypes = []
   async function handleLocationSelect(location: Location) {
     if (!selectedType) return;
     setLoading(true);
+    setError(null);
     try {
       await onAdd(selectedType, customLabel, location);
       handleClose();
+    } catch {
+      setError('Favori eklenemedi. Tekrar deneyin.');
     } finally {
       setLoading(false);
     }
@@ -49,6 +53,7 @@ export function AddFavoriteModal({ visible, onDismiss, onAdd, disabledTypes = []
     setSelectedType(null);
     setCustomLabel('');
     setShowMap(false);
+    setError(null);
     onDismiss();
   }
 
@@ -135,6 +140,9 @@ export function AddFavoriteModal({ visible, onDismiss, onAdd, disabledTypes = []
               >
                 Haritadan Seç
               </Button>
+              {error && (
+                <Text style={[styles.errorText, { color: theme.colors.error }]}>{error}</Text>
+              )}
             </View>
 
             <MapPickerModal
@@ -182,4 +190,5 @@ const styles = StyleSheet.create({
   labelInput: { marginBottom: 12, backgroundColor: 'transparent' },
   locationStep: { alignItems: 'center', paddingVertical: 24 },
   mapBtn: { width: '100%' },
+  errorText: { fontSize: 13, marginTop: 8, textAlign: 'center' },
 });

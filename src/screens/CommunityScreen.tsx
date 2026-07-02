@@ -79,7 +79,9 @@ export function CommunityScreen() {
       const [feedbacks, activeAlerts] = await Promise.all([getRecentFeedbacks(8), getActiveAlerts()]);
       setRecentFeedbacks(feedbacks);
       setAlerts(activeAlerts);
-    } catch {}
+    } catch {
+      setSnackbar('Veriler yüklenemedi. Bağlantınızı kontrol edin.');
+    }
   }, []);
 
   useEffect(() => { loadRecent(); }, []);
@@ -141,7 +143,7 @@ export function CommunityScreen() {
         feedbackLon = pos.coords.longitude;
       } catch {}
 
-      await submitFeedback({
+      const { pointsAwarded } = await submitFeedback({
         userId: user.uid,
         routeId: `line-${selectedLine.number}`,
         lineNumber: selectedLine.number,
@@ -155,8 +157,8 @@ export function CommunityScreen() {
         ...(feedbackLat !== undefined ? { latitude: feedbackLat, longitude: feedbackLon } : {}),
       });
       trackFeedbackSubmit(!!plateInput.trim());
-      setSnackbar('Teşekkürler! +10 puan kazandınız.');
-      if (user) setUser({ ...user, contributionPoints: (user.contributionPoints ?? 0) + 10 });
+      setSnackbar(pointsAwarded ? 'Teşekkürler! +10 puan kazandınız.' : 'Teşekkürler! Geri bildirimin kaydedildi.');
+      if (user && pointsAwarded) setUser({ ...user, contributionPoints: (user.contributionPoints ?? 0) + 10 });
       setSelectedLine(null);
       setSelectedBusId(null);
       setPlateInput('');
@@ -422,7 +424,14 @@ export function CommunityScreen() {
                       {Math.max(0, Math.round((a.expiresAt.getTime() - Date.now()) / 60000))} dk içinde sona erer
                     </Text>
                   </View>
-                  <TouchableOpacity onPress={async () => { await upvoteAlert(a.id!); loadRecent(); }}>
+                  <TouchableOpacity onPress={async () => {
+                    try {
+                      await upvoteAlert(a.id!);
+                      await loadRecent();
+                    } catch {
+                      setSnackbar('Oylama başarısız oldu.');
+                    }
+                  }}>
                     <View style={styles.upvoteBtn}>
                       <MaterialCommunityIcons name="thumb-up-outline" size={16} color={theme.colors.primary} />
                       <Text style={[styles.upvoteCount, { color: theme.colors.primary }]}>{a.upvotes}</Text>

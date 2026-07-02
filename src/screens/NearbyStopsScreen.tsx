@@ -69,12 +69,16 @@ export function NearbyStopsScreen({ navigation }: Props) {
 
       const iztekIds = rawNearby.map(s => nearestIztekStopId(s.lat, s.lon));
 
-      await Promise.all([
-        ...uniqueLines.map(async (l: string) => { busMap.set(l, await getLineBusPositions(l)); }),
-        ...iztekIds.filter((id): id is number => id !== null).map(async (id) => {
-          approachMap.set(id, await getApproachingBuses(id));
-        }),
-      ]);
+      try {
+        await Promise.all([
+          ...uniqueLines.map(async (l: string) => { busMap.set(l, await getLineBusPositions(l)); }),
+          ...iztekIds.filter((id): id is number => id !== null).map(async (id) => {
+            approachMap.set(id, await getApproachingBuses(id));
+          }),
+        ]);
+      } catch {
+        // Canlı otobüs verisi alınamadı — duraklar yine de mesafeye göre gösterilir
+      }
 
       const nearby: NearbyStop[] = rawNearby.map((s, i) => {
         const iztekId = iztekIds[i];

@@ -10,7 +10,6 @@ import { doc, getDoc } from 'firebase/firestore';
 import { AppNavigator } from './src/navigation/AppNavigator';
 import { lightTheme, darkTheme } from './src/theme/theme';
 import { useAppStore } from './src/store/useAppStore';
-import { useNotifications } from './src/hooks/useNotifications';
 import { auth, db } from './src/services/firebase/config';
 import type { User } from './src/types';
 
@@ -18,8 +17,6 @@ function ThemedApp() {
   const isDarkMode = useAppStore((s) => s.isDarkMode);
   const setUser = useAppStore((s) => s.setUser);
   const [authReady, setAuthReady] = React.useState(false);
-
-  useNotifications();
 
   React.useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {

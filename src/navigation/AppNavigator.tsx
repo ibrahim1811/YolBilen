@@ -18,10 +18,19 @@ import { BusCardScreen } from '../screens/BusCardScreen';
 import { RouteReplayScreen } from '../screens/RouteReplayScreen';
 import { TabNavigator } from './TabNavigator';
 import { useAppStore } from '../store/useAppStore';
+import { useNotifications } from '../hooks/useNotifications';
 import type { RootStackParamList } from '../types';
 import { warmupRouting } from '../services/background/warmupService';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+// useNotifications() useNavigation() kullanıyor — NavigationContainer'ın
+// çocuğu olarak render edilmeli, aksi halde "Couldn't find a navigation
+// object" hatasıyla release build'de crash olur.
+function NotificationsBridge() {
+  useNotifications();
+  return null;
+}
 
 export function AppNavigator() {
   const user = useAppStore((s) => s.user);
@@ -36,6 +45,7 @@ export function AppNavigator() {
 
   return (
     <NavigationContainer>
+      <NotificationsBridge />
       <Stack.Navigator
         screenOptions={{ headerShown: false }}
         initialRouteName={user === null && !onboardingDone ? 'Onboarding' : user === null ? 'Login' : 'Main'}

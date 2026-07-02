@@ -3,16 +3,24 @@ import { View, StyleSheet, Pressable, Dimensions, Animated } from 'react-native'
 import { Text, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-const GAME_WIDTH = Math.min(340, Dimensions.get('window').width - 48);
-const GAME_HEIGHT = 420;
-const BIRD_SIZE = 32;
+const GAME_WIDTH = Math.min(380, Dimensions.get('window').width - 32);
+const GAME_HEIGHT = Math.min(520, Dimensions.get('window').height * 0.6);
+const BIRD_SIZE = 34;
 const BIRD_X = 60;
 const GRAVITY = 1400;
 const JUMP_VELOCITY = -430;
 const PIPE_WIDTH = 60;
-const PIPE_GAP = 160;
+const PIPE_CAP_HEIGHT = 18;
+const PIPE_CAP_OVERHANG = 6;
+const PIPE_GAP = 170;
 const PIPE_SPEED = 130;
 const PIPE_INTERVAL_MS = 1400;
+const GROUND_HEIGHT = 20;
+const CLOUDS = [
+  { top: 40, left: 0.12, size: 46 },
+  { top: 90, left: 0.55, size: 34 },
+  { top: 160, left: 0.78, size: 52 },
+];
 
 interface Pipe {
   id: number;
@@ -31,6 +39,7 @@ export function GameFlappyBird({ onScoreUpdate, onGameOver }: Props) {
   const [score, setScore] = React.useState(0);
   const [running, setRunning] = React.useState(true);
   const birdY = React.useRef(new Animated.Value(GAME_HEIGHT / 2)).current;
+  const birdRotation = React.useRef(new Animated.Value(0)).current;
   const birdYValue = React.useRef(GAME_HEIGHT / 2);
   const velocityRef = React.useRef(0);
   const pipesRef = React.useRef<Pipe[]>([]);
@@ -65,6 +74,7 @@ export function GameFlappyBird({ onScoreUpdate, onGameOver }: Props) {
       velocityRef.current += GRAVITY * dt;
       const nextY = birdYValue.current + velocityRef.current * dt;
       birdY.setValue(nextY);
+      birdRotation.setValue(Math.max(-30, Math.min(70, velocityRef.current / 6)));
 
       if (nextY < 0 || nextY > GAME_HEIGHT - BIRD_SIZE) {
         endGame();
@@ -123,32 +133,70 @@ export function GameFlappyBird({ onScoreUpdate, onGameOver }: Props) {
 
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.scoreText, { color: theme.colors.onSurface }]}>Skor: {score}</Text>
+      <View style={styles.scoreChip}>
+        <MaterialCommunityIcons name="star-four-points" size={16} color="#ffb703" />
+        <Text style={styles.scoreText}>{score}</Text>
+      </View>
       <Pressable onPress={handleJump}>
-        <View style={[styles.field, { width: GAME_WIDTH, height: GAME_HEIGHT, backgroundColor: '#bfe6f5' }]}>
+        <View style={[styles.field, { width: GAME_WIDTH, height: GAME_HEIGHT }]}>
+          {CLOUDS.map((cloud, i) => (
+            <View
+              key={i}
+              style={[
+                styles.cloud,
+                { top: cloud.top, left: GAME_WIDTH * cloud.left, width: cloud.size, height: cloud.size * 0.6 },
+              ]}
+            />
+          ))}
+
           {pipesRef.current.map((pipe) => (
             <React.Fragment key={pipe.id}>
+              <View style={[styles.pipeBody, { left: pipe.x, top: 0, height: pipe.gapY, width: PIPE_WIDTH }]} />
               <View
                 style={[
-                  styles.pipe,
-                  { left: pipe.x, top: 0, height: pipe.gapY, width: PIPE_WIDTH, backgroundColor: '#3fa34d' },
+                  styles.pipeCap,
+                  { left: pipe.x - PIPE_CAP_OVERHANG, top: pipe.gapY - PIPE_CAP_HEIGHT, width: PIPE_WIDTH + PIPE_CAP_OVERHANG * 2 },
                 ]}
               />
               <View
                 style={[
-                  styles.pipe,
+                  styles.pipeBody,
                   {
                     left: pipe.x,
                     top: pipe.gapY + PIPE_GAP,
                     height: GAME_HEIGHT - pipe.gapY - PIPE_GAP,
                     width: PIPE_WIDTH,
-                    backgroundColor: '#3fa34d',
                   },
+                ]}
+              />
+              <View
+                style={[
+                  styles.pipeCap,
+                  { left: pipe.x - PIPE_CAP_OVERHANG, top: pipe.gapY + PIPE_GAP, width: PIPE_WIDTH + PIPE_CAP_OVERHANG * 2 },
                 ]}
               />
             </React.Fragment>
           ))}
-          <Animated.View style={[styles.bird, { left: BIRD_X, transform: [{ translateY: birdY }] }]}>
+
+          <View style={styles.ground} />
+
+          <Animated.View
+            style={[
+              styles.bird,
+              {
+                left: BIRD_X,
+                transform: [
+                  { translateY: birdY },
+                  {
+                    rotate: birdRotation.interpolate({
+                      inputRange: [-30, 70],
+                      outputRange: ['-30deg', '70deg'],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
             <MaterialCommunityIcons name="bird" size={BIRD_SIZE} color="#ffb703" />
           </Animated.View>
         </View>
@@ -160,9 +208,37 @@ export function GameFlappyBird({ onScoreUpdate, onGameOver }: Props) {
 
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', paddingVertical: 12, gap: 12 },
-  scoreText: { fontSize: 18, fontWeight: '700' },
-  field: { borderRadius: 12, overflow: 'hidden', position: 'relative' },
-  pipe: { position: 'absolute', borderRadius: 4 },
-  bird: { position: 'absolute', width: BIRD_SIZE, height: BIRD_SIZE },
+  scoreChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  scoreText: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  field: { borderRadius: 16, overflow: 'hidden', position: 'relative', backgroundColor: '#7ec8e3' },
+  cloud: { position: 'absolute', borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.55)' },
+  pipeBody: { position: 'absolute', backgroundColor: '#4cb35c', borderLeftWidth: 3, borderRightWidth: 3, borderColor: '#2f7d3d' },
+  pipeCap: {
+    position: 'absolute',
+    height: PIPE_CAP_HEIGHT,
+    borderRadius: 4,
+    backgroundColor: '#5fcb70',
+    borderWidth: 3,
+    borderColor: '#2f7d3d',
+  },
+  ground: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: GROUND_HEIGHT,
+    backgroundColor: '#deb887',
+    borderTopWidth: 3,
+    borderTopColor: '#8b6b3d',
+  },
+  bird: { position: 'absolute', width: BIRD_SIZE, height: BIRD_SIZE, alignItems: 'center', justifyContent: 'center' },
   hint: { fontSize: 12 },
 });

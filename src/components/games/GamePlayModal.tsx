@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Portal, Modal, Text, IconButton, Button, useTheme } from 'react-native-paper';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppStore } from '../../store/useAppStore';
 import { MAX_LIVES, msUntilNextLife } from '../../services/games/lifeService';
@@ -104,48 +105,54 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
   return (
     <Portal>
       <Modal visible={visible} onDismiss={onDismiss} contentContainerStyle={[styles.container, { backgroundColor: theme.colors.surface }]}>
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <MaterialCommunityIcons name="heart" size={18} color="#e63946" />
-            <Text style={[styles.headerText, { color: theme.colors.onSurface }]}>{gameLives}/{MAX_LIVES}</Text>
-            <Text style={[styles.headerText, { color: theme.colors.onSurfaceVariant, marginLeft: 12 }]}>
-              {gameId ? GAME_LABELS[gameId] : ''} · Skor: {liveScore}
-            </Text>
-          </View>
-          <IconButton icon="close" size={20} onPress={onDismiss} />
-        </View>
-
-        {gameLives <= 0 ? (
-          <View style={styles.noLives}>
-            <MaterialCommunityIcons name="heart-off-outline" size={40} color={theme.colors.onSurfaceVariant} />
-            <Text style={[styles.noLivesText, { color: theme.colors.onSurface }]}>Canların bitti</Text>
-            {secondsLeft !== null && (
-              <Text style={[styles.noLivesSub, { color: theme.colors.onSurfaceVariant }]}>
-                {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')} sonra yeni can
+        <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+          <View style={styles.header}>
+            <View style={styles.headerLeft}>
+              <MaterialCommunityIcons name="heart" size={18} color="#e63946" />
+              <Text style={[styles.headerText, { color: theme.colors.onSurface }]}>{gameLives}/{MAX_LIVES}</Text>
+              <Text style={[styles.headerText, { color: theme.colors.onSurfaceVariant, marginLeft: 12 }]}>
+                {gameId ? GAME_LABELS[gameId] : ''} · Skor: {liveScore}
               </Text>
-            )}
-            <Button
-              mode="contained"
-              onPress={handleWatchAdForLife}
-              disabled={!rewardedAdLoaded}
-              style={{ marginTop: 12, borderRadius: 10 }}
-            >
-              {rewardedAdLoaded ? 'Reklam İzleyerek Can Kazan' : 'Reklam yükleniyor…'}
-            </Button>
+            </View>
+            <IconButton icon="close" size={22} onPress={onDismiss} />
           </View>
-        ) : (
-          renderGame()
-        )}
+
+          <View style={styles.body}>
+            {gameLives <= 0 ? (
+              <View style={styles.noLives}>
+                <MaterialCommunityIcons name="heart-off-outline" size={40} color={theme.colors.onSurfaceVariant} />
+                <Text style={[styles.noLivesText, { color: theme.colors.onSurface }]}>Canların bitti</Text>
+                {secondsLeft !== null && (
+                  <Text style={[styles.noLivesSub, { color: theme.colors.onSurfaceVariant }]}>
+                    {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')} sonra yeni can
+                  </Text>
+                )}
+                <Button
+                  mode="contained"
+                  onPress={handleWatchAdForLife}
+                  disabled={!rewardedAdLoaded}
+                  style={{ marginTop: 12, borderRadius: 10 }}
+                >
+                  {rewardedAdLoaded ? 'Reklam İzleyerek Can Kazan' : 'Reklam yükleniyor…'}
+                </Button>
+              </View>
+            ) : (
+              renderGame()
+            )}
+          </View>
+        </SafeAreaView>
       </Modal>
     </Portal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { margin: 12, borderRadius: 16, padding: 12, maxHeight: '90%' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  container: { margin: 0, borderRadius: 0, flex: 1 },
+  safeArea: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingTop: 8 },
   headerLeft: { flexDirection: 'row', alignItems: 'center' },
   headerText: { fontSize: 14, fontWeight: '700', marginLeft: 4 },
+  body: { flex: 1, justifyContent: 'center' },
   noLives: { alignItems: 'center', paddingVertical: 48, gap: 6 },
   noLivesText: { fontSize: 16, fontWeight: '700' },
   noLivesSub: { fontSize: 13 },

@@ -3,7 +3,7 @@ import { View, StyleSheet, PanResponder, Dimensions } from 'react-native';
 import { Text, useTheme } from 'react-native-paper';
 
 const SIZE = 4;
-const BOARD_WIDTH = Math.min(320, Dimensions.get('window').width - 64);
+const BOARD_WIDTH = Math.min(380, Dimensions.get('window').width - 40);
 const CELL_GAP = 8;
 const CELL_SIZE = (BOARD_WIDTH - CELL_GAP * (SIZE + 1)) / SIZE;
 
@@ -118,6 +118,7 @@ export function Game2048({ onScoreUpdate, onGameOver }: Props) {
   const [score, setScore] = React.useState(0);
   const boardRef = React.useRef(board);
   boardRef.current = board;
+  const scoreRef = React.useRef(0);
   const overRef = React.useRef(false);
 
   const applyMove = React.useCallback(
@@ -127,17 +128,16 @@ export function Game2048({ onScoreUpdate, onGameOver }: Props) {
       if (!didMove) return;
       const withTile = addRandomTile(moved);
       setBoard(withTile);
-      setScore((s) => {
-        const next = s + gained;
-        onScoreUpdate(next);
-        return next;
-      });
+      const next = scoreRef.current + gained;
+      scoreRef.current = next;
+      setScore(next);
+      onScoreUpdate(next);
       if (!canMove(withTile)) {
         overRef.current = true;
-        setTimeout(() => onGameOver(score + gained), 300);
+        setTimeout(() => onGameOver(scoreRef.current), 300);
       }
     },
-    [onGameOver, onScoreUpdate, score]
+    [onGameOver, onScoreUpdate]
   );
 
   const panResponder = React.useRef(

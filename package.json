@@ -12,6 +12,7 @@
     "babel-preset-expo": "^56.0.15",
     "expo": "~56.0.12",
     "expo-asset": "^56.0.17",
+    "expo-build-properties": "^57.0.2",
     "expo-device": "^56.0.4",
     "expo-location": "^56.0.18",
     "expo-notifications": "^56.0.18",

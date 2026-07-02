@@ -12,6 +12,7 @@ import { GamePlayModal } from '../components/games/GamePlayModal';
 import { DemoAdLoadingModal } from '../components/common/DemoAdLoadingModal';
 import { BannerAdBox } from '../components/ads/BannerAdBox';
 import { useRewardedAdReward } from '../hooks/useRewardedAdReward';
+import { useCappedInterstitialAd } from '../hooks/useCappedInterstitialAd';
 import type { GameId } from '../types';
 
 const GAME_CARDS: { id: GameId; label: string; icon: string }[] = [
@@ -54,6 +55,8 @@ export function GamesScreen() {
     }, [user])
   );
 
+  const { maybeShow: maybeShowInterstitial } = useCappedInterstitialAd();
+
   useFocusEffect(
     React.useCallback(() => {
       regenerateLives();
@@ -62,6 +65,7 @@ export function GamesScreen() {
   );
 
   function openGame(gameId: GameId) {
+    maybeShowInterstitial();
     setSelectedGame(gameId);
     setModalVisible(true);
   }

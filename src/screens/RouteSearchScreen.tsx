@@ -10,6 +10,7 @@ import { ErrorView } from '../components/common/ErrorView';
 import { useAppStore } from '../store/useAppStore';
 import { findRoutes, sortRoutes } from '../services/gtfs/routingService';
 import { saveRouteCache, loadRouteCache } from '../services/cache/routeCache';
+import { useCappedInterstitialAd } from '../hooks/useCappedInterstitialAd';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, RouteFilterMode, Route } from '../types';
 
@@ -31,6 +32,7 @@ export function RouteSearchScreen({ navigation }: Props) {
   const [searchError, setSearchError] = useState<string | null>(null);
   const h = new Date().getHours();
   const isNight = h >= 22 || h < 6;
+  const { maybeShow: maybeShowInterstitial } = useCappedInterstitialAd();
 
   useEffect(() => { trackScreenView('RouteSearch'); }, []);
 
@@ -45,6 +47,7 @@ export function RouteSearchScreen({ navigation }: Props) {
         if (r.length > 0) {
           const hasLive = r.some(route => (route.confidence ?? 0) > 70);
           void saveRouteCache(origin, destination, r, hasLive ? 'realtime' : 'static');
+          maybeShowInterstitial();
         }
         setRoutes(r);
       })

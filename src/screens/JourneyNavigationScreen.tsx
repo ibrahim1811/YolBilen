@@ -516,6 +516,7 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
             onDone={() => {
               if (user && !user.isGuest) {
                 const now = new Date();
+                const totalMeters = route.steps?.reduce((s, st) => s + (st.distanceMeters ?? 0), 0) ?? 0;
                 void saveJourney({
                   userId: user.uid,
                   lineNumber: route.lineNumber,
@@ -523,7 +524,7 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
                   originName: boarding?.name ?? '',
                   destinationName: alighting?.name ?? '',
                   durationMins: route.estimatedDuration,
-                  distanceKm: 0,
+                  distanceKm: Math.round((totalMeters / 1000) * 10) / 10,
                   timestamp: now,
                   dayOfWeek: now.getDay(),
                   hourOfDay: now.getHours(),

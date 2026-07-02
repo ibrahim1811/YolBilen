@@ -4,6 +4,7 @@ import { Text, Surface, useTheme, Appbar, ProgressBar } from 'react-native-paper
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getUserJourneys, computeStats } from '../services/firebase/journeyService';
+import { getUserFeedbackCount } from '../services/firebase/firestore';
 import { computeSeasonalBadges } from '../services/gamification/badgeService';
 import { useAppStore } from '../store/useAppStore';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -17,15 +18,26 @@ export function JourneyHistoryScreen({ navigation }: Props) {
   const theme = useTheme();
   const user = useAppStore(s => s.user);
   const [journeys, setJourneys] = React.useState<JourneyRecord[]>([]);
+  const [feedbackCount, setFeedbackCount] = React.useState(0);
   const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
     if (!user || user.isGuest) { setLoading(false); return; }
-    getUserJourneys(user.uid).then(j => { setJourneys(j); setLoading(false); }).catch(() => setLoading(false));
+    Promise.all([
+      getUserJourneys(user.uid),
+      getUserFeedbackCount(user.uid),
+    ]).then(([j, count]) => {
+      setJourneys(j);
+      setFeedbackCount(count);
+      setLoading(false);
+    }).catch(() => setLoading(false));
   }, [user?.uid]);
 
   const stats = React.useMemo(() => computeStats(journeys), [journeys]);
-  const seasonal = React.useMemo(() => computeSeasonalBadges(stats), [stats]);
+  const seasonal = React.useMemo(
+    () => computeSeasonalBadges({ ...stats, feedbackCount }),
+    [stats, feedbackCount]
+  );
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>

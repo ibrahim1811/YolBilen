@@ -30,6 +30,7 @@ interface JourneyStatsForBadge {
   total: number;
   totalKm: number;
   uniqueLines: number;
+  feedbackCount: number;
 }
 
 export function computeSeasonalBadges(stats: JourneyStatsForBadge): SeasonalBadge[] {
@@ -39,8 +40,8 @@ export function computeSeasonalBadges(stats: JourneyStatsForBadge): SeasonalBadg
       icon: 'bell-badge',
       label: '100 Bildirim',
       description: '100 topluluk bildirimi gönder',
-      earned: stats.total >= 100,
-      progress: Math.min(stats.total / 100, 1),
+      earned: stats.feedbackCount >= 100,
+      progress: Math.min(stats.feedbackCount / 100, 1),
     },
     {
       id: 'km1000',

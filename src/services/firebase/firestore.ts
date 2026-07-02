@@ -2,6 +2,7 @@ import {
   collection,
   addDoc,
   getDocs,
+  getCountFromServer,
   deleteDoc,
   setDoc,
   getDoc,
@@ -20,7 +21,7 @@ import { updateBusCardFromFeedback } from './busCardService';
 
 // ── Feedback ──────────────────────────────────────────────────────────────────
 
-export async function submitFeedback(feedback: Omit<Feedback, 'id'>): Promise<void> {
+export async function submitFeedback(feedback: Omit<Feedback, 'id'>): Promise<{ pointsAwarded: boolean }> {
   if (!auth.currentUser) throw new Error('auth/session-expired');
   await addDoc(collection(db, 'feedbacks'), {
     ...feedback,
@@ -39,13 +40,18 @@ export async function submitFeedback(feedback: Omit<Feedback, 'id'>): Promise<vo
     }, { merge: true });
   } catch {}
 
+  let pointsAwarded = true;
   try {
     await setDoc(doc(db, 'users', feedback.userId), {
       contributionPoints: increment(10),
     }, { merge: true });
-  } catch {}
+  } catch {
+    pointsAwarded = false;
+  }
 
-  void updateBusCardFromFeedback(feedback as Feedback);
+  updateBusCardFromFeedback(feedback as Feedback).catch(() => {});
+
+  return { pointsAwarded };
 }
 
 export async function getUserPoints(userId: string): Promise<number> {
@@ -70,6 +76,15 @@ export async function getLineFeedbacks(lineNumber: string): Promise<Feedback[]> 
     // Composite index missing — fall back to unordered query
     const snap = await getDocs(query(col, where('lineNumber', '==', lineNumber), limit(20)));
     return mapFeedbacks(snap.docs).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  }
+}
+
+export async function getUserFeedbackCount(userId: string): Promise<number> {
+  try {
+    const snap = await getCountFromServer(query(collection(db, 'feedbacks'), where('userId', '==', userId)));
+    return snap.data().count;
+  } catch {
+    return 0;
   }
 }
 

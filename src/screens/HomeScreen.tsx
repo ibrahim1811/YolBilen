@@ -24,6 +24,15 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, FavoriteType, JourneyRecord } from '../types';
 
+function findStopCoordsByName(name: string): { lat: number; lon: number } | null {
+  const stops = getStops();
+  const target = name.trim().toLowerCase();
+  const exact = stops.find(s => s.name.trim().toLowerCase() === target);
+  if (exact) return { lat: exact.lat, lon: exact.lon };
+  const partial = stops.find(s => s.name.toLowerCase().includes(target) || target.includes(s.name.toLowerCase()));
+  return partial ? { lat: partial.lat, lon: partial.lon } : null;
+}
+
 export function HomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const theme = useTheme();
@@ -190,7 +199,7 @@ export function HomeScreen() {
                   key={fav.id}
                   favorite={fav}
                   onPress={() => setDestination(fav.location)}
-                  onLongPress={() => removeLocation(fav.id)}
+                  onLongPress={() => removeLocation(fav.id).catch(() => {})}
                 />
               ))}
               {!user?.isGuest && <AddFavoriteCard onPress={() => setShowAddModal(true)} />}
@@ -213,7 +222,7 @@ export function HomeScreen() {
                     lineNumber: line.lineNumber,
                     lineName: line.lineName,
                   })}
-                  onRemove={() => removeLine(line.id)}
+                  onRemove={() => removeLine(line.id).catch(() => {})}
                 />
               ))}
             </View>
@@ -253,7 +262,14 @@ export function HomeScreen() {
               compact
               mode="contained"
               onPress={() => {
-                useAppStore.getState().setOrigin({ name: routine!.originName, latitude: 0, longitude: 0 });
+                const originCoords = findStopCoordsByName(routine!.originName);
+                const destCoords = findStopCoordsByName(routine!.destinationName);
+                if (originCoords) {
+                  useAppStore.getState().setOrigin({ name: routine!.originName, latitude: originCoords.lat, longitude: originCoords.lon });
+                }
+                if (destCoords) {
+                  useAppStore.getState().setDestination({ name: routine!.destinationName, latitude: destCoords.lat, longitude: destCoords.lon });
+                }
                 navigation.navigate('RouteSearch');
               }}
             >

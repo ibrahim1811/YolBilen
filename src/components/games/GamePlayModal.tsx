@@ -5,10 +5,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppStore } from '../../store/useAppStore';
 import { MAX_LIVES, msUntilNextLife } from '../../services/games/lifeService';
 import { addCoins } from '../../services/firebase/coinService';
+import { useRewardedAdReward } from '../../hooks/useRewardedAdReward';
 import { Game2048 } from './Game2048';
 import { GameFlappyBird } from './GameFlappyBird';
 import { GameWordle } from './GameWordle';
-import { DemoAdLoadingModal } from '../common/DemoAdLoadingModal';
 import type { GameId } from '../../types';
 
 interface Props {
@@ -44,8 +44,9 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
   const [liveScore, setLiveScore] = React.useState(0);
   const [sessionKey, setSessionKey] = React.useState(0);
   const [msLeft, setMsLeft] = React.useState<number | null>(null);
-  const [adModalVisible, setAdModalVisible] = React.useState(false);
   const playedGamesRef = React.useRef<Set<GameId>>(new Set());
+
+  const { isLoaded: rewardedAdLoaded, show: showRewardedAd } = useRewardedAdReward(grantLife);
 
   React.useEffect(() => {
     if (!visible) return;
@@ -84,12 +85,7 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
   );
 
   function handleWatchAdForLife() {
-    setAdModalVisible(true);
-  }
-
-  function handleAdComplete() {
-    setAdModalVisible(false);
-    grantLife();
+    if (rewardedAdLoaded) showRewardedAd();
   }
 
   function renderGame() {
@@ -128,21 +124,19 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
                 {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')} sonra yeni can
               </Text>
             )}
-            <Button mode="contained" onPress={handleWatchAdForLife} style={{ marginTop: 12, borderRadius: 10 }}>
-              Reklam İzleyerek Can Kazan
+            <Button
+              mode="contained"
+              onPress={handleWatchAdForLife}
+              disabled={!rewardedAdLoaded}
+              style={{ marginTop: 12, borderRadius: 10 }}
+            >
+              {rewardedAdLoaded ? 'Reklam İzleyerek Can Kazan' : 'Reklam yükleniyor…'}
             </Button>
           </View>
         ) : (
           renderGame()
         )}
       </Modal>
-
-      <DemoAdLoadingModal
-        visible={adModalVisible}
-        kind="ad"
-        rewardLabel="+1 Can"
-        onComplete={handleAdComplete}
-      />
     </Portal>
   );
 }

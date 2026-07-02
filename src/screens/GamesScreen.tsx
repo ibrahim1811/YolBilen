@@ -11,6 +11,7 @@ import { redeemCode, addCoins } from '../services/firebase/coinService';
 import { GamePlayModal } from '../components/games/GamePlayModal';
 import { DemoAdLoadingModal } from '../components/common/DemoAdLoadingModal';
 import { BannerAdBox } from '../components/ads/BannerAdBox';
+import { useRewardedAdReward } from '../hooks/useRewardedAdReward';
 import type { GameId } from '../types';
 
 const GAME_CARDS: { id: GameId; label: string; icon: string }[] = [
@@ -43,7 +44,15 @@ export function GamesScreen() {
   const [codeInput, setCodeInput] = React.useState('');
   const [codeMessage, setCodeMessage] = React.useState<string | null>(null);
   const [redeeming, setRedeeming] = React.useState(false);
-  const [adModal, setAdModal] = React.useState<{ visible: boolean; kind: 'ad' | 'purchase'; reward: number } | null>(null);
+  const [purchaseModal, setPurchaseModal] = React.useState<{ visible: boolean; reward: number } | null>(null);
+
+  const { isLoaded: rewardedAdLoaded, show: showRewardedAd } = useRewardedAdReward(
+    React.useCallback(() => {
+      if (!user) return;
+      addCoins(user.uid, AD_REWARD_COINS).catch(() => {});
+      addCoinsOptimistic(AD_REWARD_COINS);
+    }, [user])
+  );
 
   useFocusEffect(
     React.useCallback(() => {
@@ -78,21 +87,21 @@ export function GamesScreen() {
   }
 
   function handleWatchAd() {
-    setAdModal({ visible: true, kind: 'ad', reward: AD_REWARD_COINS });
+    if (rewardedAdLoaded) showRewardedAd();
   }
 
   function handlePurchase(coins: number) {
-    setAdModal({ visible: true, kind: 'purchase', reward: coins });
+    setPurchaseModal({ visible: true, reward: coins });
   }
 
-  function handleAdComplete() {
-    if (!adModal || !user) {
-      setAdModal(null);
+  function handlePurchaseComplete() {
+    if (!purchaseModal || !user) {
+      setPurchaseModal(null);
       return;
     }
-    addCoins(user.uid, adModal.reward).catch(() => {});
-    addCoinsOptimistic(adModal.reward);
-    setAdModal(null);
+    addCoins(user.uid, purchaseModal.reward).catch(() => {});
+    addCoinsOptimistic(purchaseModal.reward);
+    setPurchaseModal(null);
   }
 
   async function handleClaimMission(missionId: string, coinReward: number) {
@@ -123,8 +132,13 @@ export function GamesScreen() {
         <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
           <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Coin Kazan</Text>
           <View style={styles.rowGap}>
-            <Button mode="contained-tonal" onPress={handleWatchAd} style={styles.flexButton}>
-              🎬 Reklam İzle (+{AD_REWARD_COINS})
+            <Button
+              mode="contained-tonal"
+              onPress={handleWatchAd}
+              disabled={!rewardedAdLoaded}
+              style={styles.flexButton}
+            >
+              {rewardedAdLoaded ? `🎬 Reklam İzle (+${AD_REWARD_COINS})` : 'Reklam yükleniyor…'}
             </Button>
           </View>
           <View style={styles.packagesRow}>
@@ -210,10 +224,10 @@ export function GamesScreen() {
       <GamePlayModal visible={modalVisible} gameId={selectedGame} onDismiss={() => setModalVisible(false)} />
 
       <DemoAdLoadingModal
-        visible={!!adModal?.visible}
-        kind={adModal?.kind ?? 'ad'}
-        rewardLabel={`+${adModal?.reward ?? 0} Coin`}
-        onComplete={handleAdComplete}
+        visible={!!purchaseModal?.visible}
+        kind="purchase"
+        rewardLabel={`+${purchaseModal?.reward ?? 0} Coin`}
+        onComplete={handlePurchaseComplete}
       />
     </SafeAreaView>
   );

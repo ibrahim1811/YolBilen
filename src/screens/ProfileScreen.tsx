@@ -61,7 +61,7 @@ export function ProfileScreen() {
                 {user?.displayName ?? 'Kullanıcı'}
               </Text>
               <Text style={[styles.profileEmail, { color: theme.colors.onSurfaceVariant }]}>
-                {user?.isGuest ? 'Misafir Kullanıcı' : user?.email}
+                {user?.isGuest ? 'Misafir Kullanıcı' : user?.email ?? '—'}
               </Text>
             </View>
           </View>

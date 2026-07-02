@@ -25,7 +25,13 @@ function ThemedApp() {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (snap.exists()) {
             const data = snap.data() as User;
-            setUser({ ...data, coins: data.coins ?? 0 });
+            setUser({
+              ...data,
+              displayName: data.displayName ?? firebaseUser.displayName,
+              email: data.email ?? firebaseUser.email,
+              photoURL: data.photoURL ?? firebaseUser.photoURL,
+              coins: data.coins ?? 0,
+            });
           } else {
             setUser({
               uid: firebaseUser.uid,

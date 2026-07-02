@@ -76,7 +76,16 @@ export async function signInWithEmail(email: string, password: string): Promise<
 
   try {
     const snap = await getDoc(doc(db, 'users', result.user.uid));
-    if (snap.exists()) return snap.data() as User;
+    if (snap.exists()) {
+      const data = snap.data() as User;
+      return {
+        ...data,
+        displayName: data.displayName ?? fallback.displayName,
+        email: data.email ?? fallback.email,
+        photoURL: data.photoURL ?? fallback.photoURL,
+        coins: data.coins ?? 0,
+      };
+    }
     await upsertUser(fallback);
   } catch {}
 

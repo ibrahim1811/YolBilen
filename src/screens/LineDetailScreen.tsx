@@ -274,7 +274,17 @@ export function LineDetailScreen({ navigation, route }: Props) {
               const isFirst = i === 0;
               const isLast = i === lineStops.length - 1;
               return (
-                <View key={stop.id} style={styles.stopRow}>
+                <TouchableOpacity
+                  key={stop.id}
+                  style={styles.stopRow}
+                  onPress={() => navigation.navigate('StopDetail', {
+                    stopId: stop.id,
+                    stopName: stop.name,
+                    latitude: stop.lat,
+                    longitude: stop.lon,
+                    lines: [lineNumber],
+                  })}
+                >
                   <View style={styles.stopTimeline}>
                     <View style={[
                       styles.stopDot,
@@ -289,7 +299,8 @@ export function LineDetailScreen({ navigation, route }: Props) {
                   ]}>
                     {stop.name}
                   </Text>
-                </View>
+                  <MaterialCommunityIcons name="chevron-right" size={16} color={theme.colors.onSurfaceVariant} />
+                </TouchableOpacity>
               );
             })}
           </Surface>

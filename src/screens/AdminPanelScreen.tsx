@@ -1,6 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl, TextInput, TouchableOpacity, ScrollView } from 'react-native';
-import { Text, Surface, useTheme, Appbar, Button } from 'react-native-paper';
+import { Text, Surface, useTheme, Appbar, Button, Snackbar } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getActiveAlerts, deleteAlert, postAlert, ALERT_LABELS, ALERT_ICONS, ALERT_EXPIRY_MINS } from '../services/firebase/alertService';
@@ -19,6 +19,14 @@ export function AdminPanelScreen({ navigation }: Props) {
   const theme = useTheme();
   const user = useAppStore(s => s.user);
   const [activeTab, setActiveTab] = useState<Tab>('alerts');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  function describeError(e: unknown): string {
+    const code = (e as { code?: string })?.code;
+    if (code === 'permission-denied') return 'Yetkin yok — Firestore kuralları bu işlemi engelliyor.';
+    const msg = (e as { message?: string })?.message;
+    return msg ? `Hata: ${msg}` : 'Bilinmeyen bir hata oluştu.';
+  }
 
   // Uyarılar state
   const [alerts, setAlerts] = useState<CommunityAlert[]>([]);
@@ -48,7 +56,7 @@ export function AdminPanelScreen({ navigation }: Props) {
     try {
       const data = await getActiveAlerts();
       setAlerts(data);
-    } catch {}
+    } catch (e) { setErrorMsg(describeError(e)); }
     setAlertsLoading(false);
   }, []);
 
@@ -56,14 +64,14 @@ export function AdminPanelScreen({ navigation }: Props) {
     try {
       const data = await getAnnouncements();
       setAnnouncements(data);
-    } catch {}
+    } catch (e) { setErrorMsg(describeError(e)); }
   }, []);
 
   const loadCodes = useCallback(async () => {
     try {
       const data = await getRedeemCodes();
       setCodes(data);
-    } catch {}
+    } catch (e) { setErrorMsg(describeError(e)); }
   }, []);
 
   React.useEffect(() => {
@@ -89,7 +97,7 @@ export function AdminPanelScreen({ navigation }: Props) {
       setNewCoinAmount('');
       setNewMaxUses('');
       await loadCodes();
-    } catch {}
+    } catch (e) { setErrorMsg(describeError(e)); }
     setCodePosting(false);
   }
 
@@ -98,7 +106,7 @@ export function AdminPanelScreen({ navigation }: Props) {
     try {
       await deleteRedeemCode(code);
       setCodes(prev => prev.filter(c => c.code !== code));
-    } catch {}
+    } catch (e) { setErrorMsg(describeError(e)); }
     setCodeDeleting(null);
   }
 
@@ -116,7 +124,7 @@ export function AdminPanelScreen({ navigation }: Props) {
       });
       setNewLineNumber('');
       await loadAlerts();
-    } catch {}
+    } catch (e) { setErrorMsg(describeError(e)); }
     setPosting(false);
   }
 
@@ -125,7 +133,7 @@ export function AdminPanelScreen({ navigation }: Props) {
     try {
       await deleteAlert(id);
       setAlerts(prev => prev.filter(a => a.id !== id));
-    } catch {}
+    } catch (e) { setErrorMsg(describeError(e)); }
     setDeleting(null);
   }
 
@@ -137,7 +145,7 @@ export function AdminPanelScreen({ navigation }: Props) {
       setAnnTitle('');
       setAnnBody('');
       await loadAnnouncements();
-    } catch {}
+    } catch (e) { setErrorMsg(describeError(e)); }
     setAnnPosting(false);
   }
 
@@ -146,7 +154,7 @@ export function AdminPanelScreen({ navigation }: Props) {
     try {
       await deleteAnnouncement(id);
       setAnnouncements(prev => prev.filter(a => a.id !== id));
-    } catch {}
+    } catch (e) { setErrorMsg(describeError(e)); }
     setAnnDeleting(null);
   }
 
@@ -379,6 +387,10 @@ export function AdminPanelScreen({ navigation }: Props) {
           )}
         />
       )}
+
+      <Snackbar visible={!!errorMsg} onDismiss={() => setErrorMsg(null)} duration={4000}>
+        {errorMsg}
+      </Snackbar>
     </SafeAreaView>
   );
 }

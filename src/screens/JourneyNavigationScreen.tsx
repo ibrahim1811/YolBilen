@@ -313,6 +313,7 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
   const phaseRef = useRef<Phase>('walk');
   const notifiedAlightRef = useRef(false);
   const boardingPromptedRef = useRef(false);
+  const lastLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
   const html = useMemo(
     () => buildNavHtml(route.steps, boarding, alighting),
@@ -335,6 +336,7 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
         { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 15 },
         loc => {
           const { latitude, longitude, speed } = loc.coords;
+          lastLocationRef.current = { latitude, longitude };
 
           webRef.current?.injectJavaScript(
             `(function(){if(userMarker){map.removeLayer(userMarker);}userMarker=L.circleMarker([${latitude},${longitude}],{radius:8,color:'#4285F4',fillColor:'#4285F4',fillOpacity:1,weight:3}).addTo(map);})();true;`
@@ -416,6 +418,22 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  async function handleCenterOnMe() {
+    let loc = lastLocationRef.current;
+    if (!loc) {
+      try {
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        loc = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+        lastLocationRef.current = loc;
+      } catch {
+        return;
+      }
+    }
+    webRef.current?.injectJavaScript(
+      `(function(){map.setView([${loc.latitude},${loc.longitude}],16,{animate:true});})();true;`
+    );
+  }
+
   function handleCancel() {
     Alert.alert(
       'Yolculuğu İptal Et',
@@ -442,6 +460,13 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
         domStorageEnabled
         mixedContentMode="always"
       />
+
+      <TouchableOpacity
+        style={[styles.locateFab, { backgroundColor: theme.colors.surface }]}
+        onPress={handleCenterOnMe}
+      >
+        <MaterialCommunityIcons name="crosshairs-gps" size={24} color={theme.colors.primary} />
+      </TouchableOpacity>
 
       <TouchableOpacity
         style={[styles.gameFab, { backgroundColor: theme.colors.primary }]}
@@ -531,6 +556,22 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  locateFab: {
+    position: 'absolute',
+    right: 16,
+    bottom: '48%',
+    marginBottom: 64,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 4,

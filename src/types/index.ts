@@ -46,7 +46,6 @@ export interface Route {
   boardingStop?: RouteStop;
   alightingStop?: RouteStop;
   steps?: RouteStep[];
-  score?: number;
   confidence?: number;
   hasIncompleteData?: boolean;
   confidenceDetail?: RouteConfidenceDetail;
@@ -59,14 +58,6 @@ export interface RouteConfidenceDetail {
   directionVerified: boolean;
   stopMatchQuality: 'high' | 'medium' | 'low';
   reasons: string[];
-}
-
-export interface RouteScoreWeights {
-  duration: number;
-  walk: number;
-  transfer: number;
-  crowd: number;
-  sun: number;
 }
 
 export interface Transfer {
@@ -241,7 +232,6 @@ export interface BusCard {
 export interface NotificationPrefs {
   busArrivals: boolean;
   lineAlerts: boolean;
-  crowdAlerts: boolean;
 }
 
 export type TabParamList = {

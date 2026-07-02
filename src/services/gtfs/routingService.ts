@@ -1,10 +1,11 @@
-import type { Route, Location, CrowdLevel, RouteStop, RouteStep, RouteFilterMode, SunAnalysis, RouteScoreWeights, RouteConfidenceDetail } from '../../types';
+import type { Route, Location, CrowdLevel, RouteStop, RouteStep, RouteFilterMode, SunAnalysis, RouteConfidenceDetail } from '../../types';
 import {
   findBoardAlightPair,
   getLinesNearOrigin,
   getOrderedStopsForDir,
   getRouteName,
   clearLinesNearCache,
+  isRingRoute,
 } from '../../data/gtfsData';
 import { getCachedSunAnalysis } from '../sun/sunCache';
 import { getNextArrivalMins } from '../firebase/scheduleService';
@@ -17,15 +18,6 @@ const withTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
   Promise.race([p, new Promise<T>(r => setTimeout(() => r(fallback), ms))]);
 const WALK_EXTENDED_M = 1200;
 const TRANSFER_WALK_M = 600;
-
-const SCORE_WEIGHTS: Record<RouteFilterMode, RouteScoreWeights> = {
-  fastest:         { duration: 60, walk: 15, transfer: 15, crowd: 5,  sun: 5  },
-  comfortable:     { duration: 25, walk: 15, transfer: 15, crowd: 25, sun: 20 },
-  cool:            { duration: 20, walk: 10, transfer: 10, crowd: 20, sun: 40 },
-  least_transfers: { duration: 20, walk: 10, transfer: 60, crowd: 5,  sun: 5  },
-  night_safe:      { duration: 20, walk: 35, transfer: 35, crowd: 5,  sun: 5  },
-};
-const DEFAULT_WEIGHTS = SCORE_WEIGHTS.fastest;
 
 function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const R = 6371;
@@ -58,12 +50,13 @@ function intermediateStops(
   const ordered = getOrderedStopsForDir(lineNum, dir);
   const boardI = ordered.findIndex(s => s.id === boardId);
   const alightI = ordered.findIndex(s => s.id === alightId);
-  if (boardI < 0 || alightI < 0 || alightI <= boardI) return [];
-  return ordered.slice(boardI + 1, alightI).map(s => ({
-    name: s.name,
-    latitude: s.lat,
-    longitude: s.lon,
-  }));
+  if (boardI < 0 || alightI < 0 || boardI === alightI) return [];
+  const mid = alightI > boardI
+    ? ordered.slice(boardI + 1, alightI)
+    : isRingRoute(lineNum)
+      ? [...ordered.slice(boardI + 1), ...ordered.slice(0, alightI)] // halka hat: son duraktan sonra başa sarar
+      : [];
+  return mid.map(s => ({ name: s.name, latitude: s.lat, longitude: s.lon }));
 }
 
 function calcTransitDetails(
@@ -123,14 +116,20 @@ function sunAnalysisForSteps(
   steps: RouteStep[],
   origin: Location,
   destination: Location,
-  lineNum: string,
-  dir: 0 | 1
+  routeKey: string,
+  departureMins: number
 ): SunAnalysis {
-  const transit = steps.find(s => s.type === 'transit');
-  const waypoints: Array<{ latitude: number; longitude: number }> = transit?.boardStop
-    ? [transit.boardStop, ...(transit.intermediateStops ?? []), transit.alightStop!]
+  const transitSteps = steps.filter(s => s.type === 'transit');
+  const waypoints: Array<{ latitude: number; longitude: number }> = transitSteps.length > 0
+    ? transitSteps.flatMap(t => [t.boardStop!, ...(t.intermediateStops ?? []), t.alightStop!])
     : [origin, destination];
-  return getCachedSunAnalysis(lineNum, dir, waypoints, new Date());
+  const departureTime = new Date(Date.now() + departureMins * 60000);
+  return getCachedSunAnalysis(routeKey, waypoints, departureTime);
+}
+
+interface ArrivalEstimate {
+  mins: number;
+  isLive: boolean; // true: gerçek İZTEK GPS verisi, false: statik tarife tahmini
 }
 
 async function liveNextArrival(
@@ -139,7 +138,7 @@ async function liveNextArrival(
   lon: number,
   dir: 0 | 1,
   boardStopId?: string
-): Promise<number> {
+): Promise<ArrivalEstimate> {
   const iztekId = boardStopId
     ? bestIztekStopId(lat, lon, lineNum, dir, boardStopId)
     : nearestIztekStopId(lat, lon);
@@ -147,10 +146,10 @@ async function liveNextArrival(
     try {
       const buses = await withTimeout(getApproachingBuses(iztekId, dir), 3000, []);
       const match = buses.find(b => String(b.hatNumarasi) === lineNum);
-      if (match) return minsFromRemainingStops(match.kalanDurakSayisi);
+      if (match) return { mins: minsFromRemainingStops(match.kalanDurakSayisi), isLive: true };
     } catch {}
   }
-  return getNextArrivalMins(lineNum);
+  return { mins: getNextArrivalMins(lineNum), isLive: false };
 }
 
 // getBusCard plate-based — hat numarasından plaka bilinmez; saat bazlı heuristik kullan
@@ -159,28 +158,6 @@ function getCrowdLevel(): CrowdLevel {
   if ((hour >= 7 && hour < 9) || (hour >= 17 && hour < 19)) return 'high';
   if ((hour >= 9 && hour < 17) || (hour >= 19 && hour < 21)) return 'medium';
   return 'low';
-}
-
-function calcRouteScore(
-  estimatedDuration: number,
-  walkMeters: number,
-  transferCount: number,
-  crowdLevel: CrowdLevel,
-  sunAnalysis: SunAnalysis | undefined,
-  weights: RouteScoreWeights = DEFAULT_WEIGHTS
-): number {
-  const crowdPenalty: Record<CrowdLevel, number> = { low: 0, medium: 5, high: 15, very_high: 30 };
-  const sunPenalty = sunAnalysis
-    ? Math.max(sunAnalysis.leftPercentage, sunAnalysis.rightPercentage) - 50
-    : 0;
-  const w = weights;
-  return (
-    estimatedDuration        * (w.duration  / 100) +
-    (walkMeters / 1000) * 20 * (w.walk      / 100) +
-    transferCount * 15       * (w.transfer  / 100) +
-    crowdPenalty[crowdLevel] * (w.crowd     / 100) +
-    Math.max(0, sunPenalty)  * (w.sun       / 100)
-  );
 }
 
 function calcConfidenceDetail(
@@ -233,7 +210,6 @@ export async function findRoutes(
   destination: Location,
   options: { allowLongWalk?: boolean; filterMode?: RouteFilterMode } = {}
 ): Promise<Route[]> {
-  const weights = options.filterMode ? SCORE_WEIGHTS[options.filterMode] : DEFAULT_WEIGHTS;
   const maxWalkM = options.allowLongWalk ? WALK_EXTENDED_M : WALK_NORMAL_M;
   const maxWalkKm = maxWalkM / 1000;
 
@@ -272,9 +248,8 @@ export async function findRoutes(
   const results: Route[] = [];
 
   valid.forEach(({ lineNum, name, pair }, i) => {
-    const nextArrival = arrivals[i];
+    const { mins: nextArrival, isLive: hasLiveData } = arrivals[i];
     const crowdLevel = crowdLevels[i];
-    const hasLiveData = nextArrival < 999 && nextArrival > 0;
 
     const boardStop: RouteStop = {
       id: pair!.board.id,
@@ -290,10 +265,11 @@ export async function findRoutes(
     };
 
     const steps = buildSteps(origin, destination, lineNum, pair!.dir, boardStop, alightStop, nextArrival);
-    const estimatedDuration = steps.reduce((s, st) => s + st.durationMins, 0);
-    const walkMeters = steps.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0);
-    const sunAnalysis = sunAnalysisForSteps(steps, origin, destination, lineNum, pair!.dir);
-    const score = calcRouteScore(estimatedDuration, walkMeters, 0, crowdLevel, sunAnalysis, weights);
+    const sunAnalysis = sunAnalysisForSteps(
+      steps, origin, destination,
+      `${lineNum}_${pair!.dir}_${boardStop.id}_${alightStop.id}`,
+      nextArrival
+    );
     const scheduleOk = hasSchedule(lineNum);
     const boardWalkM = steps[0]?.distanceMeters ?? 0;
     const alightWalkM = steps[steps.length - 1]?.distanceMeters ?? 0;
@@ -303,7 +279,7 @@ export async function findRoutes(
       id: `direct-${lineNum}-${pair!.dir}`,
       lineNumber: lineNum,
       lineName: name!,
-      estimatedDuration,
+      estimatedDuration: steps.reduce((s, st) => s + st.durationMins, 0),
       transfers: [],
       nextArrival,
       crowdLevel,
@@ -311,18 +287,15 @@ export async function findRoutes(
       boardingStop: boardStop,
       alightingStop: alightStop,
       steps,
-      score,
       confidence: confidenceDetail.score,
       confidenceDetail,
       hasIncompleteData: !scheduleOk,
     });
   });
 
-  results.sort((a, b) => (a.score ?? 99) - (b.score ?? 99));
-
   if (results.length < 3) {
     try {
-      const transfers = await findTransferRoutes(origin, destination);
+      const transfers = await findTransferRoutes(origin, destination, maxWalkM);
       for (const tr of transfers) {
         if (!results.find(r => r.id === tr.id)) results.push(tr);
       }
@@ -333,11 +306,11 @@ export async function findRoutes(
   return results;
 }
 
-async function findTransferRoutes(origin: Location, destination: Location): Promise<Route[]> {
+async function findTransferRoutes(origin: Location, destination: Location, maxWalkM: number): Promise<Route[]> {
   const results: Route[] = [];
   const line1Candidates = getLinesNearOrigin(
     { lat: origin.latitude, lon: origin.longitude },
-    WALK_NORMAL_M / 1000
+    maxWalkM / 1000
   ).slice(0, 10); // en fazla 10 hat dene — daha fazlası azalan kazanım
 
   for (const line1 of line1Candidates) {
@@ -359,7 +332,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
       const d = haversineKm({ lat: origin.latitude, lon: origin.longitude }, { lat: line1Stops[i].lat, lon: line1Stops[i].lon });
       if (d < boardDist) { boardDist = d; boardIdx = i; }
     }
-    if (boardDist * 1000 > WALK_NORMAL_M) continue;
+    if (boardDist * 1000 > maxWalkM) continue;
 
     const board1Stop = line1Stops[boardIdx];
 
@@ -401,7 +374,7 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
           { lat: destination.latitude, lon: destination.longitude },
           { lat: pair2.alight.lat, lon: pair2.alight.lon }
         );
-        if (alightWalk * 1000 > WALK_NORMAL_M) continue;
+        if (alightWalk * 1000 > maxWalkM) continue;
 
         const board1: RouteStop = { id: board1Stop.id, name: board1Stop.name, latitude: board1Stop.lat, longitude: board1Stop.lon };
         const alight1: RouteStop = { id: midStop.id, name: midStop.name, latitude: midStop.lat, longitude: midStop.lon };
@@ -422,8 +395,8 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
         ]);
 
         // Redundant 0-mesafe yürüyüş adımlarını çıkar
-        const steps1Raw = buildSteps(origin, { name: alight1.name, latitude: alight1.latitude, longitude: alight1.longitude }, line1, dir1, board1, alight1, arr1);
-        const steps2Raw = buildSteps({ name: board2.name, latitude: board2.latitude, longitude: board2.longitude }, destination, line2, pair2.dir, board2, alight2, arr2);
+        const steps1Raw = buildSteps(origin, { name: alight1.name, latitude: alight1.latitude, longitude: alight1.longitude }, line1, dir1, board1, alight1, arr1.mins);
+        const steps2Raw = buildSteps({ name: board2.name, latitude: board2.latitude, longitude: board2.longitude }, destination, line2, pair2.dir, board2, alight2, arr2.mins);
         const steps1 = steps1Raw.slice(0, -1); // son walk (alight1→alight1) kaldırılır
         const steps2 = steps2Raw.slice(1);     // ilk walk (board2→board2) kaldırılır
 
@@ -436,20 +409,21 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
 
         const allSteps: RouteStep[] = [...steps1, transferWalkStep, ...steps2];
         const totalDuration = allSteps.reduce((s, st) => s + st.durationMins, 0);
-        const walkMeters = allSteps.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0);
 
         const crowdLevel: CrowdLevel = crowd1 === 'very_high' || crowd2 === 'very_high' ? 'very_high'
           : crowd1 === 'high' || crowd2 === 'high' ? 'high'
           : crowd1 === 'medium' || crowd2 === 'medium' ? 'medium' : 'low';
 
-        const sunAnalysis = sunAnalysisForSteps(steps1, origin, destination, line1, dir1);
-        const score = calcRouteScore(totalDuration, walkMeters, 1, crowdLevel, sunAnalysis, DEFAULT_WEIGHTS);
-        const hasLive1 = arr1 < 999 && arr1 > 0;
+        const sunAnalysis = sunAnalysisForSteps(
+          allSteps, origin, destination,
+          `${line1}_${dir1}_${board1.id}_${alight1.id}_${line2}_${pair2.dir}_${board2.id}_${alight2.id}`,
+          arr1.mins
+        );
         const scheduleOk1 = hasSchedule(line1);
         const scheduleOk2 = hasSchedule(line2);
         const tBoardWalkM = allSteps[0]?.distanceMeters ?? 0;
         const tAlightWalkM = allSteps[allSteps.length - 1]?.distanceMeters ?? 0;
-        const confidenceDetail = calcConfidenceDetail(hasLive1, scheduleOk1 && scheduleOk2, tBoardWalkM, tAlightWalkM);
+        const confidenceDetail = calcConfidenceDetail(arr1.isLive, scheduleOk1 && scheduleOk2, tBoardWalkM, tAlightWalkM);
 
         results.push({
           id: `transfer-${line1}-${line2}-${dir1}-${midIdx}`,
@@ -463,13 +437,12 @@ async function findTransferRoutes(origin: Location, destination: Location): Prom
             alightStop: alight2,
             walkMins: transferWalkMins,
           }],
-          nextArrival: arr1,
+          nextArrival: arr1.mins,
           crowdLevel,
           sunAnalysis,
           boardingStop: board1,
           alightingStop: alight2,
           steps: allSteps,
-          score,
           confidence: confidenceDetail.score,
           confidenceDetail,
           hasIncompleteData: !scheduleOk1 || !scheduleOk2,

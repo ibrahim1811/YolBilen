@@ -3,19 +3,20 @@ import { analyzeSunExposureAlongRoute } from './sunAnalysis';
 
 const _cache = new Map<string, SunAnalysis>();
 
-function cacheKey(lineNum: string, dir: 0 | 1, hour: number, month: number): string {
-  return `${lineNum}_${dir}_${hour}_${month}`;
+function cacheKey(routeKey: string, hour: number, month: number): string {
+  return `${routeKey}_${hour}_${month}`;
 }
 
+// routeKey durak çiftini de içermeli (örn. "42_0_1001_1050") — aksi halde aynı
+// hat+yöndeki farklı biniş/iniş çiftleri birbirinin güneş sonucunu çalar.
 export function getCachedSunAnalysis(
-  lineNum: string,
-  dir: 0 | 1,
+  routeKey: string,
   waypoints: Array<{ latitude: number; longitude: number }>,
   date: Date
 ): SunAnalysis {
   const hour = date.getHours();
   const month = date.getMonth();
-  const key = cacheKey(lineNum, dir, hour, month);
+  const key = cacheKey(routeKey, hour, month);
   if (_cache.has(key)) return _cache.get(key)!;
   const result = analyzeSunExposureAlongRoute(waypoints, date);
   _cache.set(key, result);

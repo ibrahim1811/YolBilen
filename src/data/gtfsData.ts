@@ -173,7 +173,8 @@ export function findBoardAlightPair(
       if (d < alightDist) { alightDist = d; alightI = i; }
     }
 
-    if (!ring && alightI <= boardI) continue;
+    if (alightI === boardI) continue;
+    if (!ring && alightI < boardI) continue;
 
     const cost = boardDist + alightDist;
     if (!best || cost < best.cost) {

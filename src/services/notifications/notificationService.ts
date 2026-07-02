@@ -92,17 +92,6 @@ export async function scheduleLocalNotification(
   } catch {}
 }
 
-export async function scheduleArrivalNotification(lineNumber: string, minsAway: number): Promise<void> {
-  const warnSecs = Math.max(0, (minsAway - 2) * 60);
-  await scheduleLocalNotification(
-    `Hat ${lineNumber} geliyor`,
-    `${lineNumber} numaralı otobüs ~2 dakika sonra durağa ulaşıyor`,
-    'arrivals',
-    warnSecs,
-    { type: 'arrival', lineNumber }
-  );
-}
-
 export async function cancelAllNotifications(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
 }

@@ -18,7 +18,6 @@ import { todayDateSeed, pickDailyMissions, getMissionDef } from '../services/gam
 const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   busArrivals: true,
   lineAlerts: true,
-  crowdAlerts: false,
 };
 
 const DEFAULT_HIGH_SCORES: Record<GameId, number> = {

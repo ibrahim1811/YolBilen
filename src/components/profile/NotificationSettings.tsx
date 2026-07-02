@@ -61,14 +61,6 @@ export function NotificationSettings() {
         value={notificationPrefs.lineAlerts}
         onChange={(v) => update('lineAlerts', v)}
       />
-      <Divider />
-      <PrefRow
-        icon="account-group"
-        color="#FF6D00"
-        label={t('notif_crowd_alerts')}
-        value={notificationPrefs.crowdAlerts}
-        onChange={(v) => update('crowdAlerts', v)}
-      />
     </Surface>
   );
 }

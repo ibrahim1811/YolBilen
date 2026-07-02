@@ -10,6 +10,8 @@ import { useRewardedAdReward } from '../../hooks/useRewardedAdReward';
 import { Game2048 } from './Game2048';
 import { GameFlappyBird } from './GameFlappyBird';
 import { GameWordle } from './GameWordle';
+import { GameBlockBlast } from './GameBlockBlast';
+import { GameTetris } from './GameTetris';
 import type { GameId } from '../../types';
 
 interface Props {
@@ -22,12 +24,16 @@ const GAME_LABELS: Record<GameId, string> = {
   game2048: '2048',
   flappy: 'Flappy Kuş',
   wordle: 'Kelime Bul',
+  blockblast: 'Block Blast',
+  tetris: 'Tetris',
 };
 
 const SCORE_COIN_THRESHOLDS: Record<GameId, { threshold: number; reward: number }> = {
   game2048: { threshold: 512, reward: 20 },
   flappy: { threshold: 10, reward: 20 },
   wordle: { threshold: 400, reward: 20 },
+  blockblast: { threshold: 300, reward: 20 },
+  tetris: { threshold: 500, reward: 20 },
 };
 
 export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
@@ -99,6 +105,8 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
       case 'game2048': return <Game2048 key={sessionKey} {...props} />;
       case 'flappy': return <GameFlappyBird key={sessionKey} {...props} />;
       case 'wordle': return <GameWordle key={sessionKey} {...props} />;
+      case 'blockblast': return <GameBlockBlast key={sessionKey} {...props} />;
+      case 'tetris': return <GameTetris key={sessionKey} {...props} />;
       default: return null;
     }
   }

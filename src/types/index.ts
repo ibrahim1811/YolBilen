@@ -242,7 +242,7 @@ export type TabParamList = {
   Profile: undefined;
 };
 
-export type GameId = 'game2048' | 'flappy' | 'wordle';
+export type GameId = 'game2048' | 'flappy' | 'wordle' | 'blockblast' | 'tetris';
 
 export type MissionMetric = 'playCount' | 'totalScore' | 'distinctGames' | 'journeyStarted';
 

@@ -24,18 +24,24 @@ const DEFAULT_HIGH_SCORES: Record<GameId, number> = {
   game2048: 0,
   flappy: 0,
   wordle: 0,
+  blockblast: 0,
+  tetris: 0,
 };
 
 const DEFAULT_GAME_LIVES: Record<GameId, number> = {
   game2048: MAX_LIVES,
   flappy: MAX_LIVES,
   wordle: MAX_LIVES,
+  blockblast: MAX_LIVES,
+  tetris: MAX_LIVES,
 };
 
 const DEFAULT_LAST_LIFE_CONSUMED: Record<GameId, number | null> = {
   game2048: null,
   flappy: null,
   wordle: null,
+  blockblast: null,
+  tetris: null,
 };
 
 interface AppState {
@@ -197,7 +203,7 @@ export const useAppStore = create<AppState>()(
     {
       name: 'yolbul-store',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 3,
+      version: 4,
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
         if (version === 0) {
@@ -222,6 +228,15 @@ export const useAppStore = create<AppState>()(
             ...state,
             gameLives: DEFAULT_GAME_LIVES,
             lastLifeConsumedAt: DEFAULT_LAST_LIFE_CONSUMED,
+          };
+        }
+        if (version < 4) {
+          // Block Blast ve Tetris eklendi — yeni GameId anahtarlarını mevcut Record'lara ekle
+          state = {
+            ...state,
+            gameLives: { ...DEFAULT_GAME_LIVES, ...state.gameLives },
+            lastLifeConsumedAt: { ...DEFAULT_LAST_LIFE_CONSUMED, ...state.lastLifeConsumedAt },
+            highScores: { ...DEFAULT_HIGH_SCORES, ...state.highScores },
           };
         }
         return state;

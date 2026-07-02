@@ -19,6 +19,8 @@ const GAME_CARDS: { id: GameId; label: string; icon: string }[] = [
   { id: 'game2048', label: '2048', icon: 'grid' },
   { id: 'flappy', label: 'Flappy Kuş', icon: 'bird' },
   { id: 'wordle', label: 'Kelime Bul', icon: 'alphabetical' },
+  { id: 'blockblast', label: 'Block Blast', icon: 'view-grid-outline' },
+  { id: 'tetris', label: 'Tetris', icon: 'shape' },
 ];
 
 const PURCHASE_PACKAGES = [

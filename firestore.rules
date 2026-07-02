@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.email == "ibrahimkayracetin2008@gmail.com" ||
+        exists(/databases/$(database)/documents/admin/$(request.auth.token.email))
+      );
+    }
+
+    // Kullanıcı kendi profilini okuyup yazabilir (coins, badges, contributionPoints dahil)
+    match /users/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // admin/{email} — checkIsAdmin() bu dokümanın varlığına bakıyor
+    match /admin/{email} {
+      allow read: if isAuthenticated() && (request.auth.token.email == email || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    // Geri bildirim: giriş yapmış herkes okuyabilir, sadece kendi adına gönderebilir
+    match /feedbacks/{feedbackId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Hat istatistikleri: her feedback gönderiminde increment ile güncelleniyor (client-side aggregate)
+    match /line_stats/{lineNumber} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Otobüs kartı (plaka bazlı) kalabalık raporları
+    match /bus_cards/{plate} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // Favori konumlar ve hatlar — ayrı iki koleksiyon
+    match /favorite_locations/{id} {
+      allow read, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /favorite_lines/{id} {
+      allow read, delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
+
+    // Topluluk uyarıları (dolu/arızalı/gecikme vb.)
+    match /community_alerts/{alertId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update: if isAuthenticated(); // upvote sayacı artırma
+      allow delete: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
+    }
+
+    // Admin duyuruları — sadece admin yazar, herkes okur
+    match /announcements/{id} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Coin kodları — admin oluşturur/siler, kullanıcı redeem sırasında usedCount günceller
+    match /redeem_codes/{code} {
+      allow get: if isAuthenticated();
+      allow list: if isAdmin();
+      allow update: if isAuthenticated();
+      allow create, delete: if isAdmin();
+    }
+
+    match /redeem_code_uses/{id} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
+    }
+
+    // Yolculuk geçmişi — sadece sahibi görür/yazar
+    match /journeys/{id} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+    }
+
+    // Sefer tarifeleri — sadece okunur (build-gtfs script ile dolduruluyor, client yazmaz)
+    match /schedules/{lineNumber} {
+      allow read: if isAuthenticated();
+    }
+  }
+}

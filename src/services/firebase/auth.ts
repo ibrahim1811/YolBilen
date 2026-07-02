@@ -30,6 +30,7 @@ export async function signInWithGoogle(): Promise<User> {
     isGuest: false,
     contributionPoints: 0,
     badges: [],
+    coins: 0,
   };
 
   await upsertUser(user);
@@ -52,6 +53,7 @@ export async function registerWithEmail(
     isGuest: false,
     contributionPoints: 0,
     badges: [],
+    coins: 0,
   };
 
   try { await upsertUser(user); } catch {}
@@ -69,6 +71,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
     isGuest: false,
     contributionPoints: 0,
     badges: [],
+    coins: 0,
   };
 
   try {
@@ -90,6 +93,7 @@ export async function signInAsGuest(): Promise<User> {
     isGuest: true,
     contributionPoints: 0,
     badges: [],
+    coins: 0,
   };
   await upsertUser(user);
   return user;

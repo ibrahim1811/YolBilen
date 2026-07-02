@@ -26,7 +26,8 @@ function ThemedApp() {
         try {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
           if (snap.exists()) {
-            setUser(snap.data() as User);
+            const data = snap.data() as User;
+            setUser({ ...data, coins: data.coins ?? 0 });
           } else {
             setUser({
               uid: firebaseUser.uid,
@@ -36,6 +37,7 @@ function ThemedApp() {
               isGuest: firebaseUser.isAnonymous,
               contributionPoints: 0,
               badges: [],
+              coins: 0,
             });
           }
         } catch {
@@ -47,6 +49,7 @@ function ThemedApp() {
             isGuest: firebaseUser.isAnonymous,
             contributionPoints: 0,
             badges: [],
+            coins: 0,
           });
         }
       } else {

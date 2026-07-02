@@ -6,6 +6,7 @@ export interface User {
   isGuest: boolean;
   contributionPoints: number;
   badges: string[];
+  coins: number;
 }
 
 export interface Location {
@@ -247,5 +248,25 @@ export type TabParamList = {
   Home: undefined;
   Lines: undefined;
   Community: undefined;
+  Games: undefined;
   Profile: undefined;
 };
+
+export type GameId = 'game2048' | 'flappy' | 'wordle';
+
+export type MissionMetric = 'playCount' | 'totalScore' | 'distinctGames' | 'journeyStarted';
+
+export interface DailyMissionDef {
+  id: string;
+  label: string;
+  target: number;
+  metric: MissionMetric;
+  coinReward: number;
+}
+
+export interface DailyMissionState {
+  date: string;
+  missionIds: string[];
+  progress: Record<string, number>;
+  claimed: Record<string, boolean>;
+}

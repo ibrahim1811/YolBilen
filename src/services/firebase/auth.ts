@@ -28,9 +28,6 @@ export async function signInWithGoogle(): Promise<User> {
     email: result.user.email,
     photoURL: result.user.photoURL,
     isGuest: false,
-    contributionPoints: 0,
-    badges: [],
-    coins: 0,
   };
 
   await upsertUser(user);
@@ -51,12 +48,13 @@ export async function registerWithEmail(
     email: result.user.email,
     photoURL: null,
     isGuest: false,
-    contributionPoints: 0,
-    badges: [],
-    coins: 0,
   };
 
-  try { await upsertUser(user); } catch {}
+  try {
+    await upsertUser(user);
+  } catch (e) {
+    console.warn('[registerWithEmail] kullanıcı profili oluşturulamadı:', e);
+  }
   return user;
 }
 
@@ -69,9 +67,6 @@ export async function signInWithEmail(email: string, password: string): Promise<
     email: result.user.email,
     photoURL: result.user.photoURL,
     isGuest: false,
-    contributionPoints: 0,
-    badges: [],
-    coins: 0,
   };
 
   try {
@@ -83,7 +78,6 @@ export async function signInWithEmail(email: string, password: string): Promise<
         displayName: data.displayName ?? fallback.displayName,
         email: data.email ?? fallback.email,
         photoURL: data.photoURL ?? fallback.photoURL,
-        coins: data.coins ?? 0,
       };
     }
     await upsertUser(fallback);
@@ -100,9 +94,6 @@ export async function signInAsGuest(): Promise<User> {
     email: null,
     photoURL: null,
     isGuest: true,
-    contributionPoints: 0,
-    badges: [],
-    coins: 0,
   };
   await upsertUser(user);
   return user;
@@ -112,7 +103,11 @@ export async function signOut(): Promise<void> {
   const isGoogle = !auth.currentUser?.isAnonymous && auth.currentUser?.providerData[0]?.providerId === 'google.com';
   await firebaseSignOut(auth);
   if (isGoogle) {
-    await GoogleSignin.signOut();
+    try {
+      await GoogleSignin.signOut();
+    } catch (e) {
+      console.warn('[signOut] Google oturumu kapatılamadı:', e);
+    }
   }
 }
 

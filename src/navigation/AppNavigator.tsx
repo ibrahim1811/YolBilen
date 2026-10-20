@@ -37,7 +37,12 @@ export function AppNavigator() {
   const [onboardingDone, setOnboardingDone] = React.useState<boolean | null>(null);
 
   React.useEffect(() => {
-    AsyncStorage.getItem('onboarding_done').then(val => setOnboardingDone(!!val));
+    AsyncStorage.getItem('onboarding_done')
+      .then(val => setOnboardingDone(!!val))
+      .catch(e => {
+        console.warn('[AppNavigator] onboarding durumu okunamadı:', e);
+        setOnboardingDone(false);
+      });
     warmupRouting();
   }, []);
 

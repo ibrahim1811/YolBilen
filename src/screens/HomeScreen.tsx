@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { Text, Button, Surface, useTheme, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -23,13 +23,18 @@ import type { CommunityAlert } from '../types';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, FavoriteType, JourneyRecord } from '../types';
+import { normalizeSearch } from '../utils/searchText';
 
 function findStopCoordsByName(name: string): { lat: number; lon: number } | null {
+  const target = normalizeSearch(name);
+  if (!target) return null;
   const stops = getStops();
-  const target = name.trim().toLowerCase();
-  const exact = stops.find(s => s.name.trim().toLowerCase() === target);
+  const exact = stops.find(s => normalizeSearch(s.name) === target);
   if (exact) return { lat: exact.lat, lon: exact.lon };
-  const partial = stops.find(s => s.name.toLowerCase().includes(target) || target.includes(s.name.toLowerCase()));
+  const partial = stops.find(s => {
+    const n = normalizeSearch(s.name);
+    return n.length > 0 && (n.includes(target) || target.includes(n));
+  });
   return partial ? { lat: partial.lat, lon: partial.lon } : null;
 }
 
@@ -88,7 +93,9 @@ export function HomeScreen() {
   }, [user?.uid]);
 
   useEffect(() => {
-    getActiveAlerts().then(a => setCrowdAlerts(a.slice(0, 3))).catch(() => {});
+    getActiveAlerts()
+      .then(a => setCrowdAlerts(a.slice(0, 3)))
+      .catch(e => console.warn('[Home] uyarılar alınamadı:', e));
   }, []);
 
   useEffect(() => {
@@ -222,7 +229,7 @@ export function HomeScreen() {
                     lineNumber: line.lineNumber,
                     lineName: line.lineName,
                   })}
-                  onRemove={() => removeLine(line.id).catch(() => {})}
+                  onRemove={() => removeLine(line.id).catch(e => { console.warn('[favori] güncellenemedi:', e); Alert.alert('İşlem başarısız', 'Favori güncellenemedi. Tekrar dene.'); })}
                 />
               ))}
             </View>

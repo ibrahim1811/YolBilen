@@ -4,10 +4,10 @@ import { PaperProvider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import mobileAds from 'react-native-google-mobile-ads';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { AppNavigator } from './src/navigation/AppNavigator';
+import { ErrorBoundary } from './src/components/common/ErrorBoundary';
 import { lightTheme, darkTheme } from './src/theme/theme';
 import { useAppStore } from './src/store/useAppStore';
 import { auth, db } from './src/services/firebase/config';
@@ -30,7 +30,6 @@ function ThemedApp() {
               displayName: data.displayName ?? firebaseUser.displayName,
               email: data.email ?? firebaseUser.email,
               photoURL: data.photoURL ?? firebaseUser.photoURL,
-              coins: data.coins ?? 0,
             });
           } else {
             setUser({
@@ -39,9 +38,6 @@ function ThemedApp() {
               email: firebaseUser.email,
               photoURL: firebaseUser.photoURL,
               isGuest: firebaseUser.isAnonymous,
-              contributionPoints: 0,
-              badges: [],
-              coins: 0,
             });
           }
         } catch {
@@ -51,9 +47,6 @@ function ThemedApp() {
             email: firebaseUser.email,
             photoURL: firebaseUser.photoURL,
             isGuest: firebaseUser.isAnonymous,
-            contributionPoints: 0,
-            badges: [],
-            coins: 0,
           });
         }
       } else {
@@ -84,16 +77,14 @@ function ThemedApp() {
 
   return (
     <PaperProvider theme={theme}>
-      <AppNavigator />
+      <ErrorBoundary>
+        <AppNavigator />
+      </ErrorBoundary>
     </PaperProvider>
   );
 }
 
 export default function App() {
-  React.useEffect(() => {
-    mobileAds().initialize();
-  }, []);
-
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>

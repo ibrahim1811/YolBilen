@@ -98,7 +98,7 @@ export function getLinesNearOrigin(
   origin: { lat: number; lon: number },
   radiusKm = 1.0
 ): string[] {
-  const key = `${(origin.lat * 100) | 0},${(origin.lon * 100) | 0},${radiusKm}`;
+  const key = `${origin.lat},${origin.lon},${radiusKm}`;
   if (_linesNearCache.has(key)) return _linesNearCache.get(key)!;
 
   const grid = getGrid();

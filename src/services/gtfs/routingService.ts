@@ -6,10 +6,11 @@ import {
   getRouteName,
   clearLinesNearCache,
   isRingRoute,
+  getStopRouteDirs,
 } from '../../data/gtfsData';
 import { getCachedSunAnalysis } from '../sun/sunCache';
-import { getNextArrivalMins } from '../firebase/scheduleService';
-import { getApproachingBuses, nearestIztekStopId, bestIztekStopId, minsFromRemainingStops } from '../iztek/iztekService';
+import { getScheduledArrivalAtStop, NO_SERVICE_MINS } from '../firebase/scheduleService';
+import { getApproachingBuses, resolveIztekStopId, estimateArrivalMins, isWaitingAtTerminal } from '../iztek/iztekService';
 import { hasSchedule } from '../../data/scheduleData';
 
 const WALK_NORMAL_M = 700;
@@ -91,11 +92,12 @@ function buildSteps(
   const fromAlight = walkCalc(alight, destination);
   const midStops = intermediateStops(lineNum, dir, board.id, alight.id);
   const { distanceMeters: transitDist, durationMins: transitDur } = calcTransitDetails(board, alight, midStops);
-  const now = new Date();
-  const depMins = now.getHours() * 60 + now.getMinutes() + nextArrivalMins;
-  const dh = Math.floor(depMins / 60) % 24;
-  const dm = depMins % 60;
-  const departureTime = `${String(dh).padStart(2, '0')}:${String(dm).padStart(2, '0')}`;
+  let departureTime: string | undefined;
+  if (nextArrivalMins < NO_SERVICE_MINS) {
+    const now = new Date();
+    const depMins = now.getHours() * 60 + now.getMinutes() + nextArrivalMins;
+    departureTime = `${String(Math.floor(depMins / 60) % 24).padStart(2, '0')}:${String(depMins % 60).padStart(2, '0')}`;
+  }
   return [
     { type: 'walk', durationMins: toBoard.mins, toStopName: board.name, distanceMeters: toBoard.meters },
     {
@@ -118,13 +120,13 @@ function sunAnalysisForSteps(
   destination: Location,
   routeKey: string,
   departureMins: number
-): SunAnalysis {
+): SunAnalysis | undefined {
   const transitSteps = steps.filter(s => s.type === 'transit');
   const waypoints: Array<{ latitude: number; longitude: number }> = transitSteps.length > 0
     ? transitSteps.flatMap(t => [t.boardStop!, ...(t.intermediateStops ?? []), t.alightStop!])
     : [origin, destination];
   const departureTime = new Date(Date.now() + departureMins * 60000);
-  return getCachedSunAnalysis(routeKey, waypoints, departureTime);
+  return getCachedSunAnalysis(routeKey, waypoints, departureTime) ?? undefined;
 }
 
 interface ArrivalEstimate {
@@ -132,24 +134,46 @@ interface ArrivalEstimate {
   isLive: boolean; // true: gerçek İZTEK GPS verisi, false: statik tarife tahmini
 }
 
-async function liveNextArrival(
+function rideMinsFromTerminal(lineNum: string, dir: 0 | 1, stopId: string): number {
+  const ordered = getOrderedStopsForDir(lineNum, dir);
+  const idx = ordered.findIndex(s => s.id === stopId);
+  if (idx <= 0) return 0;
+  const chain = ordered.slice(0, idx + 1).map(s => ({ latitude: s.lat, longitude: s.lon }));
+  return calcTransitDetails(chain[0], chain[chain.length - 1], chain.slice(1, -1)).durationMins;
+}
+
+// Durağın bulunduğu yön(ler)e göre tarifeden en yakın geliş; bugün sefer yoksa null.
+export function getScheduledArrivalForStopId(lineNum: string, stopId: string, afterMins = 0): number | null {
+  const dirs = (getStopRouteDirs()[stopId] ?? []).filter(d => d.lineNum === lineNum).map(d => d.dir);
+  const results = dirs
+    .map(dir => getScheduledArrivalAtStop(lineNum, dir, rideMinsFromTerminal(lineNum, dir, stopId), afterMins))
+    .filter((m): m is number => m !== null);
+  return results.length > 0 ? Math.min(...results) : null;
+}
+
+// afterMins: yürüyerek/aktarmayla durağa varmadan önce gelen otobüsler atlanır.
+async function nextArrival(
   lineNum: string,
-  lat: number,
-  lon: number,
   dir: 0 | 1,
-  boardStopId?: string
+  board: { id: string; lat: number; lon: number },
+  afterMins: number
 ): Promise<ArrivalEstimate> {
-  const iztekId = boardStopId
-    ? bestIztekStopId(lat, lon, lineNum, dir, boardStopId)
-    : nearestIztekStopId(lat, lon);
+  const iztekId = resolveIztekStopId(board.id, board.lat, board.lon);
   if (iztekId) {
     try {
-      const buses = await withTimeout(getApproachingBuses(iztekId, dir), 3000, []);
-      const match = buses.find(b => String(b.hatNumarasi) === lineNum);
-      if (match) return { mins: minsFromRemainingStops(match.kalanDurakSayisi), isLive: true };
-    } catch {}
+      const buses = await withTimeout(getApproachingBuses(iztekId), 3000, []);
+      const etas = buses
+        .filter(b => String(b.hatNumarasi) === lineNum && !isWaitingAtTerminal(b, board.id))
+        .map(b => estimateArrivalMins(b, board.id))
+        .filter(m => m >= afterMins)
+        .sort((x, y) => x - y);
+      if (etas.length > 0) return { mins: etas[0], isLive: true };
+    } catch (e) {
+      console.warn('[nextArrival] canlı veri alınamadı, tarifeye düşülüyor:', e);
+    }
   }
-  return { mins: getNextArrivalMins(lineNum), isLive: false };
+  const scheduled = getScheduledArrivalAtStop(lineNum, dir, rideMinsFromTerminal(lineNum, dir, board.id), afterMins);
+  return { mins: scheduled ?? NO_SERVICE_MINS, isLive: false };
 }
 
 // getBusCard plate-based — hat numarasından plaka bilinmez; saat bazlı heuristik kullan
@@ -228,21 +252,25 @@ export async function findRoutes(
     ),
   })).filter(x => x.name && x.pair);
 
-  const valid = pairs.filter(({ pair }) => {
-    const boardWalkM = haversineKm(
-      { lat: origin.latitude, lon: origin.longitude },
-      { lat: pair!.board.lat, lon: pair!.board.lon }
-    ) * 1000;
-    const alightWalkM = haversineKm(
-      { lat: destination.latitude, lon: destination.longitude },
-      { lat: pair!.alight.lat, lon: pair!.alight.lon }
-    ) * 1000;
-    return boardWalkM <= maxWalkM && alightWalkM <= maxWalkM;
-  }).slice(0, 5);
+  const valid = pairs
+    .map(x => ({
+      ...x,
+      boardWalkM: haversineKm(
+        { lat: origin.latitude, lon: origin.longitude },
+        { lat: x.pair!.board.lat, lon: x.pair!.board.lon }
+      ) * 1000,
+      alightWalkM: haversineKm(
+        { lat: destination.latitude, lon: destination.longitude },
+        { lat: x.pair!.alight.lat, lon: x.pair!.alight.lon }
+      ) * 1000,
+    }))
+    .filter(x => x.boardWalkM <= maxWalkM && x.alightWalkM <= maxWalkM)
+    .sort((a, b) => (a.boardWalkM + a.alightWalkM) - (b.boardWalkM + b.alightWalkM))
+    .slice(0, 5);
 
-  const crowdLevels = valid.map(({ lineNum }) => getCrowdLevel());
+  const crowdLevels = valid.map(() => getCrowdLevel());
   const arrivals = await Promise.all(valid.map(({ pair, lineNum }) =>
-    liveNextArrival(lineNum, pair!.board.lat, pair!.board.lon, pair!.dir, pair!.board.id)
+    nextArrival(lineNum, pair!.dir, pair!.board, walkCalc(origin, { latitude: pair!.board.lat, longitude: pair!.board.lon }).mins)
   ));
 
   const results: Route[] = [];
@@ -268,7 +296,7 @@ export async function findRoutes(
     const sunAnalysis = sunAnalysisForSteps(
       steps, origin, destination,
       `${lineNum}_${pair!.dir}_${boardStop.id}_${alightStop.id}`,
-      nextArrival
+      nextArrival >= NO_SERVICE_MINS ? 0 : nextArrival
     );
     const scheduleOk = hasSchedule(lineNum);
     const boardWalkM = steps[0]?.distanceMeters ?? 0;
@@ -299,7 +327,9 @@ export async function findRoutes(
       for (const tr of transfers) {
         if (!results.find(r => r.id === tr.id)) results.push(tr);
       }
-    } catch {}
+    } catch (e) {
+      console.warn('[findRoutes] aktarmalı rota aranamadı:', e);
+    }
   }
 
   clearLinesNearCache();
@@ -385,17 +415,19 @@ async function findTransferRoutes(origin: Location, destination: Location, maxWa
           { lat: alight1.latitude, lon: alight1.longitude },
           { lat: board2.latitude, lon: board2.longitude }
         );
+        if (transferWalkKm * 1000 > TRANSFER_WALK_M) continue;
         const transferWalkMins = Math.max(1, Math.round(transferWalkKm * 12));
 
         const crowd1 = getCrowdLevel();
         const crowd2 = getCrowdLevel();
-        const [arr1, arr2] = await Promise.all([
-          liveNextArrival(line1, board1Stop.lat, board1Stop.lon, dir1, board1Stop.id),
-          liveNextArrival(line2, pair2.board.lat, pair2.board.lon, pair2.dir, pair2.board.id),
-        ]);
+        const arr1 = await nextArrival(line1, dir1, board1Stop, walkCalc(origin, board1).mins);
+        if (arr1.mins >= NO_SERVICE_MINS) continue;
 
         // Redundant 0-mesafe yürüyüş adımlarını çıkar
         const steps1Raw = buildSteps(origin, { name: alight1.name, latitude: alight1.latitude, longitude: alight1.longitude }, line1, dir1, board1, alight1, arr1.mins);
+        // İkinci otobüs, aktarma durağına varıştan sonra gelen ilk sefer olmalı
+        const arr2 = await nextArrival(line2, pair2.dir, pair2.board, arr1.mins + steps1Raw[1].durationMins + transferWalkMins);
+        if (arr2.mins >= NO_SERVICE_MINS) continue;
         const steps2Raw = buildSteps({ name: board2.name, latitude: board2.latitude, longitude: board2.longitude }, destination, line2, pair2.dir, board2, alight2, arr2.mins);
         const steps1 = steps1Raw.slice(0, -1); // son walk (alight1→alight1) kaldırılır
         const steps2 = steps2Raw.slice(1);     // ilk walk (board2→board2) kaldırılır
@@ -455,6 +487,13 @@ async function findTransferRoutes(origin: Location, destination: Location, maxWa
   return results;
 }
 
+// Bekleme dahil varış: önce durağa yürünür, otobüs beklenir, sonra yolculuk sürer.
+function arrivalAtDestinationMins(r: Route): number {
+  if (r.nextArrival >= NO_SERVICE_MINS) return Infinity;
+  const walkToBoard = r.steps?.[0]?.type === 'walk' ? r.steps[0].durationMins : 0;
+  return Math.max(r.nextArrival, walkToBoard) + r.estimatedDuration - walkToBoard;
+}
+
 function getWalkMeters(r: Route): number {
   return r.steps?.filter(s => s.type === 'walk').reduce((s, st) => s + (st.distanceMeters ?? 0), 0) ?? 0;
 }
@@ -462,11 +501,10 @@ function getWalkMeters(r: Route): number {
 export function sortRoutes(routes: Route[], mode: RouteFilterMode): Route[] {
   switch (mode) {
     case 'fastest':
-      return [...routes].sort((a, b) =>
-        a.estimatedDuration !== b.estimatedDuration
-          ? a.estimatedDuration - b.estimatedDuration
-          : getWalkMeters(a) - getWalkMeters(b)
-      );
+      return [...routes].sort((a, b) => {
+        const d = arrivalAtDestinationMins(a) - arrivalAtDestinationMins(b);
+        return d !== 0 && !isNaN(d) ? d : getWalkMeters(a) - getWalkMeters(b);
+      });
     case 'comfortable': {
       const crowdOrder: Record<CrowdLevel, number> = { low: 0, medium: 1, high: 2, very_high: 3 };
       return [...routes].sort((a, b) => {

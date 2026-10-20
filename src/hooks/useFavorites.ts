@@ -55,7 +55,7 @@ export function useFavorites() {
   );
 
   const removeLine = useCallback(async (id: string) => {
-    try { await fsRemoveLine(id); } catch {}
+    await fsRemoveLine(id);
     removeLineStore(id);
   }, []);
 

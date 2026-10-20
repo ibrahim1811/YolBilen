@@ -10,7 +10,6 @@ import { ErrorView } from '../components/common/ErrorView';
 import { useAppStore } from '../store/useAppStore';
 import { findRoutes, sortRoutes } from '../services/gtfs/routingService';
 import { saveRouteCache, loadRouteCache } from '../services/cache/routeCache';
-import { useCappedInterstitialAd } from '../hooks/useCappedInterstitialAd';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, RouteFilterMode, Route } from '../types';
 
@@ -32,7 +31,6 @@ export function RouteSearchScreen({ navigation }: Props) {
   const [searchError, setSearchError] = useState<string | null>(null);
   const h = new Date().getHours();
   const isNight = h >= 22 || h < 6;
-  const { maybeShow: maybeShowInterstitial } = useCappedInterstitialAd();
 
   useEffect(() => { trackScreenView('RouteSearch'); }, []);
 
@@ -47,13 +45,13 @@ export function RouteSearchScreen({ navigation }: Props) {
         if (r.length > 0) {
           const hasLive = r.some(route => (route.confidence ?? 0) > 70);
           void saveRouteCache(origin, destination, r, hasLive ? 'realtime' : 'static');
-          maybeShowInterstitial();
         }
         setRoutes(r);
       })
       .catch(async () => {
         if (cancelled) return;
         const cached = await loadRouteCache(origin, destination);
+        if (cancelled) return;
         if (cached) {
           setRoutes(cached);
         } else {
@@ -144,7 +142,6 @@ export function RouteSearchScreen({ navigation }: Props) {
         keyExtractor={r => r.id}
         contentContainerStyle={styles.list}
         renderItem={renderRoute}
-        removeClippedSubviews
         maxToRenderPerBatch={4}
         windowSize={5}
         initialNumToRender={3}
@@ -171,7 +168,7 @@ const styles = StyleSheet.create({
   filterRow: { paddingHorizontal: 16, paddingBottom: 10, gap: 8 },
   filterChip: { marginRight: 4, height: 36 },
   filterChipSelected: { backgroundColor: '#E8F0FE' },
-  list: { padding: 16, paddingTop: 4, gap: 4 },
+  list: { padding: 16, paddingTop: 4, gap: 4, flexGrow: 0, justifyContent: 'flex-start' },
   empty: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyText: { fontSize: 16 },
 });

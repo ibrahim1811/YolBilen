@@ -1,13 +1,13 @@
 import type { DailyMissionDef } from '../../types';
 
 export const MISSION_POOL: DailyMissionDef[] = [
-  { id: 'play_1', label: 'Bir oyun oyna', target: 1, metric: 'playCount', coinReward: 10 },
-  { id: 'play_3', label: 'Üç oyun oyna', target: 3, metric: 'playCount', coinReward: 20 },
-  { id: 'score_500', label: 'Toplamda 500 puan yap', target: 500, metric: 'totalScore', coinReward: 25 },
-  { id: 'score_1500', label: 'Toplamda 1500 puan yap', target: 1500, metric: 'totalScore', coinReward: 40 },
-  { id: 'distinct_2', label: '2 farklı oyun dene', target: 2, metric: 'distinctGames', coinReward: 15 },
-  { id: 'distinct_3', label: '3 farklı oyun dene', target: 3, metric: 'distinctGames', coinReward: 30 },
-  { id: 'journey_1', label: 'Bir yolculuk başlat', target: 1, metric: 'journeyStarted', coinReward: 15 },
+  { id: 'play_1', label: 'Bir oyun oyna', target: 1, metric: 'playCount' },
+  { id: 'play_3', label: 'Üç oyun oyna', target: 3, metric: 'playCount' },
+  { id: 'score_500', label: 'Toplamda 500 puan yap', target: 500, metric: 'totalScore' },
+  { id: 'score_1500', label: 'Toplamda 1500 puan yap', target: 1500, metric: 'totalScore' },
+  { id: 'distinct_2', label: '2 farklı oyun dene', target: 2, metric: 'distinctGames' },
+  { id: 'distinct_3', label: '3 farklı oyun dene', target: 3, metric: 'distinctGames' },
+  { id: 'journey_1', label: 'Bir yolculuk başlat', target: 1, metric: 'journeyStarted' },
 ];
 
 export function todayDateSeed(now: Date = new Date()): string {

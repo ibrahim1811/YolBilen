@@ -4,9 +4,6 @@ export interface User {
   email: string | null;
   photoURL: string | null;
   isGuest: boolean;
-  contributionPoints: number;
-  badges: string[];
-  coins: number;
 }
 
 export interface Location {
@@ -162,15 +159,7 @@ export interface StopArrival {
   lineName: string;
   minutesAway: number;
   direction: string;
-}
-
-export interface Badge {
-  id: string;
-  icon: string;
-  label: string;
-  description: string;
-  requiredPoints: number;
-  earned: boolean;
+  isLive?: boolean;
 }
 
 export interface JourneyRecord {
@@ -242,7 +231,7 @@ export type TabParamList = {
   Profile: undefined;
 };
 
-export type GameId = 'game2048' | 'flappy' | 'wordle' | 'blockblast' | 'tetris';
+export type GameId = 'game2048' | 'flappy' | 'wordle' | 'tetris';
 
 export type MissionMetric = 'playCount' | 'totalScore' | 'distinctGames' | 'journeyStarted';
 
@@ -251,7 +240,6 @@ export interface DailyMissionDef {
   label: string;
   target: number;
   metric: MissionMetric;
-  coinReward: number;
 }
 
 export interface DailyMissionState {

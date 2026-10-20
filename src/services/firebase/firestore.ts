@@ -21,7 +21,7 @@ import { updateBusCardFromFeedback } from './busCardService';
 
 // ── Feedback ──────────────────────────────────────────────────────────────────
 
-export async function submitFeedback(feedback: Omit<Feedback, 'id'>): Promise<{ pointsAwarded: boolean }> {
+export async function submitFeedback(feedback: Omit<Feedback, 'id'>): Promise<void> {
   if (!auth.currentUser) throw new Error('auth/session-expired');
   await addDoc(collection(db, 'feedbacks'), {
     ...feedback,
@@ -38,26 +38,11 @@ export async function submitFeedback(feedback: Omit<Feedback, 'id'>): Promise<{ 
       [`temp_${feedback.temperature}`]: increment(1),
       lastUpdated: Timestamp.now(),
     }, { merge: true });
-  } catch {}
-
-  let pointsAwarded = true;
-  try {
-    await setDoc(doc(db, 'users', feedback.userId), {
-      contributionPoints: increment(10),
-    }, { merge: true });
-  } catch {
-    pointsAwarded = false;
+  } catch (e) {
+    console.warn('[submitFeedback] hat istatistiği güncellenemedi:', e);
   }
 
-  updateBusCardFromFeedback(feedback as Feedback).catch(() => {});
-
-  return { pointsAwarded };
-}
-
-export async function getUserPoints(userId: string): Promise<number> {
-  const snap = await getDoc(doc(db, 'users', userId));
-  if (!snap.exists()) return 0;
-  return (snap.data().contributionPoints as number) ?? 0;
+  updateBusCardFromFeedback(feedback as Feedback).catch(e => console.warn('[submitFeedback] otobüs kartı güncellenemedi:', e));
 }
 
 function mapFeedbacks(docs: any[]): Feedback[] {

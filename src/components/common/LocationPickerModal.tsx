@@ -1,10 +1,11 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { Text, Portal, Modal, TextInput, Button, useTheme, ActivityIndicator } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { searchStops } from '../../services/gtfs/stopService';
 import type { Location as AppLocation } from '../../types';
+import { normalizeSearch } from '../../utils/searchText';
 
 interface Props {
   visible: boolean;
@@ -54,22 +55,28 @@ type ResultItem =
 export function LocationPickerModal({ visible, title, onSelect, onDismiss }: Props) {
   const theme = useTheme();
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 150);
+    return () => clearTimeout(t);
+  }, [search]);
+
   const results = useMemo<ResultItem[]>(() => {
-    if (search.length < 2) return [];
-    const q = search.toLowerCase();
+    if (debouncedSearch.trim().length < 2) return [];
+    const q = normalizeSearch(debouncedSearch);
 
     const neighborhoods = IZMIR_NEIGHBORHOODS
-      .filter(n => n.name.toLowerCase().includes(q))
+      .filter(n => normalizeSearch(n.name).includes(q))
       .map(n => ({ kind: 'neighborhood' as const, id: `n_${n.name}`, name: n.name, latitude: n.lat, longitude: n.lon }));
 
-    const stops = searchStops(search)
+    const stops = searchStops(debouncedSearch)
       .map(s => ({ kind: 'stop' as const, id: s.id, name: s.name, latitude: s.latitude, longitude: s.longitude }));
 
     return [...neighborhoods, ...stops].slice(0, 35);
-  }, [search]);
+  }, [debouncedSearch]);
 
   const handleCurrentLocation = useCallback(async () => {
     setLocating(true);
@@ -137,7 +144,7 @@ export function LocationPickerModal({ visible, title, onSelect, onDismiss }: Pro
           autoFocus
         />
 
-        {search.length >= 2 && results.length === 0 && (
+        {debouncedSearch.length >= 2 && results.length === 0 && (
           <Text style={[styles.empty, { color: theme.colors.onSurfaceVariant }]}>
             Sonuç bulunamadı
           </Text>

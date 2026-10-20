@@ -1,3 +1,4 @@
+import { minsToArrivalLabel } from '../services/firebase/scheduleService';
 import React, { useEffect } from 'react';
 import SunCalc from 'suncalc';
 import { trackScreenView } from '../services/telemetry/telemetryService';
@@ -30,9 +31,15 @@ export function RouteResultScreen({ navigation }: Props) {
   useEffect(() => { trackScreenView('RouteResult'); }, []);
 
   React.useEffect(() => {
-    if (selectedRoute) {
-      getLineComfortScore(selectedRoute.lineNumber).then(setComfortScore).catch(() => setComfortScore(null));
-    }
+    if (!selectedRoute) return;
+    let cancelled = false;
+    getLineComfortScore(selectedRoute.lineNumber)
+      .then(score => { if (!cancelled) setComfortScore(score); })
+      .catch(e => {
+        console.warn('[RouteResult] konfor puanı alınamadı:', e);
+        if (!cancelled) setComfortScore(null);
+      });
+    return () => { cancelled = true; };
   }, [selectedRoute?.lineNumber]);
 
   if (!selectedRoute) return null;
@@ -78,7 +85,7 @@ export function RouteResultScreen({ navigation }: Props) {
             <StatItem
               icon="bus-clock"
               label="Sonraki Otobüs"
-              value={selectedRoute.nextArrival >= 999 ? 'Yarın' : selectedRoute.nextArrival <= 1 ? 'Şimdi' : `${selectedRoute.nextArrival} dk`}
+              value={minsToArrivalLabel(selectedRoute.nextArrival)}
               color="#34A853"
             />
             <StatItem

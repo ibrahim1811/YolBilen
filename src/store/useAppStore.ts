@@ -24,7 +24,6 @@ const DEFAULT_HIGH_SCORES: Record<GameId, number> = {
   game2048: 0,
   flappy: 0,
   wordle: 0,
-  blockblast: 0,
   tetris: 0,
 };
 
@@ -32,7 +31,6 @@ const DEFAULT_GAME_LIVES: Record<GameId, number> = {
   game2048: MAX_LIVES,
   flappy: MAX_LIVES,
   wordle: MAX_LIVES,
-  blockblast: MAX_LIVES,
   tetris: MAX_LIVES,
 };
 
@@ -40,7 +38,6 @@ const DEFAULT_LAST_LIFE_CONSUMED: Record<GameId, number | null> = {
   game2048: null,
   flappy: null,
   wordle: null,
-  blockblast: null,
   tetris: null,
 };
 
@@ -84,10 +81,8 @@ interface AppState {
   regenerateLives: (gameId: GameId) => void;
   grantLife: (gameId: GameId) => void;
   setHighScore: (gameId: GameId, score: number) => void;
-  addCoinsOptimistic: (amount: number) => void;
   initOrRotateDailyMissions: () => void;
   incrementMissionProgress: (metric: MissionMetric, amount: number) => void;
-  claimMission: (missionId: string) => void;
 }
 
 export const useAppStore = create<AppState>()(
@@ -110,7 +105,6 @@ export const useAppStore = create<AppState>()(
       lastLifeConsumedAt: DEFAULT_LAST_LIFE_CONSUMED,
       highScores: DEFAULT_HIGH_SCORES,
       dailyMissions: null,
-
       setUser: (user) => set({ user }),
       toggleDarkMode: () => set((s) => ({ isDarkMode: !s.isDarkMode })),
       setAllowLongWalk: (allowLongWalk) => set({ allowLongWalk }),
@@ -161,8 +155,6 @@ export const useAppStore = create<AppState>()(
             [gameId]: Math.max(s.highScores[gameId] ?? 0, score),
           },
         })),
-      addCoinsOptimistic: (amount) =>
-        set((s) => (s.user ? { user: { ...s.user, coins: (s.user.coins ?? 0) + amount } } : {})),
       initOrRotateDailyMissions: () => {
         const today = todayDateSeed();
         const current = get().dailyMissions;
@@ -189,21 +181,11 @@ export const useAppStore = create<AppState>()(
           }
           return { dailyMissions: { ...s.dailyMissions, progress } };
         }),
-      claimMission: (missionId) =>
-        set((s) => {
-          if (!s.dailyMissions) return {};
-          return {
-            dailyMissions: {
-              ...s.dailyMissions,
-              claimed: { ...s.dailyMissions.claimed, [missionId]: true },
-            },
-          };
-        }),
     }),
     {
       name: 'yolbul-store',
       storage: createJSONStorage(() => AsyncStorage),
-      version: 4,
+      version: 5,
       migrate: (persistedState: any, version: number) => {
         let state = persistedState;
         if (version === 0) {
@@ -237,6 +219,19 @@ export const useAppStore = create<AppState>()(
             gameLives: { ...DEFAULT_GAME_LIVES, ...state.gameLives },
             lastLifeConsumedAt: { ...DEFAULT_LAST_LIFE_CONSUMED, ...state.lastLifeConsumedAt },
             highScores: { ...DEFAULT_HIGH_SCORES, ...state.highScores },
+          };
+        }
+        if (version < 5) {
+          // Block Blast kaldırıldı — eski anahtarı temizle
+          const strip = (r: Record<string, unknown> | undefined) => {
+            const { blockblast: _removed, ...rest } = r ?? {};
+            return rest;
+          };
+          state = {
+            ...state,
+            gameLives: { ...DEFAULT_GAME_LIVES, ...strip(state.gameLives) },
+            lastLifeConsumedAt: { ...DEFAULT_LAST_LIFE_CONSUMED, ...strip(state.lastLifeConsumedAt) },
+            highScores: { ...DEFAULT_HIGH_SCORES, ...strip(state.highScores) },
           };
         }
         return state;

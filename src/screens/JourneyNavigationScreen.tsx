@@ -9,6 +9,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, RouteStep } from '../types';
 import { scheduleLocalNotification } from '../services/notifications/notificationService';
 import { saveJourney } from '../services/firebase/journeyService';
+import { startAlightTracking, stopAlightTracking } from '../services/background/alightTask';
 import { useAppStore } from '../store/useAppStore';
 import { GamePlayModal } from '../components/games/GamePlayModal';
 
@@ -325,14 +326,49 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
     phaseRef.current = phase;
   }, [phase]);
 
+  // Otobüsteyken inme durağı arka planda da izlenir (telefon kilitliyken bildirim gelsin diye)
+  const bgTrackingRef = useRef(false);
+  useEffect(() => {
+    if (phase === 'arrived') {
+      bgTrackingRef.current = false;
+      stopAlightTracking().catch(e => console.warn('[JourneyNavigation] arka plan takibi durdurulamadı:', e));
+      return;
+    }
+    if (phase !== 'on_bus' || !alighting) return;
+    let cancelled = false;
+    startAlightTracking({ name: alighting.name, latitude: alighting.latitude, longitude: alighting.longitude })
+      .then(result => {
+        if (cancelled) return;
+        bgTrackingRef.current = result === 'started';
+        if (result === 'foreground_only') {
+          Alert.alert(
+            'Arka plan konum izni yok',
+            'İnme bildirimi yalnızca uygulama açıkken çalışacak. Telefon kilitliyken de gelmesi için konum iznini "Her zaman izin ver" yap.'
+          );
+        }
+      })
+      .catch(e => console.warn('[JourneyNavigation] arka plan takibi başlatılamadı:', e));
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  useEffect(() => () => {
+    stopAlightTracking().catch(e => console.warn('[JourneyNavigation] arka plan takibi durdurulamadı:', e));
+  }, []);
+
   useEffect(() => {
     let sub: Location.LocationSubscription | null = null;
+    let cancelled = false;
 
     (async () => {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') return;
+      if (cancelled) return;
+      if (status !== 'granted') {
+        Alert.alert('Konum izni gerekli', 'Durağa varışını ve inme zamanını takip edebilmek için konum iznine ihtiyaç var.');
+        return;
+      }
 
-      sub = await Location.watchPositionAsync(
+      const s = await Location.watchPositionAsync(
         { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 15 },
         loc => {
           const { latitude, longitude, speed } = loc.coords;
@@ -389,7 +425,7 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
               setNearestStopIdx(minIdx);
             }
 
-            if (!notifiedAlightRef.current && alighting) {
+            if (!notifiedAlightRef.current && alighting && !bgTrackingRef.current) {
               const d = distMeters(latitude, longitude, alighting.latitude, alighting.longitude);
               if (d < ALIGHT_NOTIFY_M) {
                 notifiedAlightRef.current = true;
@@ -410,9 +446,15 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
           }
         }
       );
-    })();
+      if (cancelled) { s.remove(); return; }
+      sub = s;
+    })().catch(e => {
+      console.warn('[JourneyNavigation] konum takibi başlatılamadı:', e);
+      if (!cancelled) Alert.alert('Konum alınamadı', 'Konum servislerinin açık olduğundan emin ol.');
+    });
 
     return () => {
+      cancelled = true;
       sub?.remove();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -517,7 +559,7 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
               if (user && !user.isGuest) {
                 const now = new Date();
                 const totalMeters = route.steps?.reduce((s, st) => s + (st.distanceMeters ?? 0), 0) ?? 0;
-                void saveJourney({
+                saveJourney({
                   userId: user.uid,
                   lineNumber: route.lineNumber,
                   lineName: route.lineName,
@@ -528,6 +570,9 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
                   timestamp: now,
                   dayOfWeek: now.getDay(),
                   hourOfDay: now.getHours(),
+                }).catch(e => {
+                  console.warn('[JourneyNavigation] yolculuk kaydedilemedi:', e);
+                  Alert.alert('Yolculuk kaydedilemedi', 'İnternet bağlantını kontrol et.');
                 });
               }
               navigation.popToTop();

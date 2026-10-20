@@ -64,8 +64,8 @@ export function analyzeSunExposureAlongRoute(
   waypoints: Array<{ latitude: number; longitude: number }>,
   departureTime: Date,
   avgSpeedKmh = 22
-): SunAnalysis {
-  if (waypoints.length < 2) return getMockSunAnalysis();
+): SunAnalysis | null {
+  if (waypoints.length < 2) return null;
 
   function segDistKm(
     a: { latitude: number; longitude: number },
@@ -115,7 +115,8 @@ export function analyzeSunExposureAlongRoute(
     totalWeight += weight;
   }
 
-  if (totalWeight === 0) return getMockSunAnalysis();
+  // Güneş yolculuk boyunca ufkun altında: gösterilecek bir taraf yok
+  if (totalWeight === 0) return null;
 
   const rightPct = Math.round(rightWeightedSum / totalWeight);
   const leftPct = 100 - rightPct;

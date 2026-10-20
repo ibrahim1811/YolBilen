@@ -62,7 +62,8 @@ export function LoginScreen({ navigation }: Props) {
     try {
       const user = await signInAsGuest();
       setUser(user);
-    } catch {
+    } catch (e: any) {
+      setError(`Misafir girişi başarısız: ${e?.code ?? e?.message ?? String(e)}`);
       setLoading(null);
     }
   }

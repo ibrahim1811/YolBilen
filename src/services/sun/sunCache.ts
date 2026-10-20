@@ -1,7 +1,7 @@
 import type { SunAnalysis } from '../../types';
 import { analyzeSunExposureAlongRoute } from './sunAnalysis';
 
-const _cache = new Map<string, SunAnalysis>();
+const _cache = new Map<string, SunAnalysis | null>();
 
 function cacheKey(routeKey: string, hour: number, month: number): string {
   return `${routeKey}_${hour}_${month}`;
@@ -13,7 +13,7 @@ export function getCachedSunAnalysis(
   routeKey: string,
   waypoints: Array<{ latitude: number; longitude: number }>,
   date: Date
-): SunAnalysis {
+): SunAnalysis | null {
   const hour = date.getHours();
   const month = date.getMonth();
   const key = cacheKey(routeKey, hour, month);

@@ -188,7 +188,13 @@ export function RouteMapScreen({ navigation, route: navRoute }: Props) {
   React.useEffect(() => {
     let cancelled = false;
     async function fetchBuses() {
-      const positions = await getLineBusPositions(route.lineNumber);
+      let positions: BusPosition[];
+      try {
+        positions = await getLineBusPositions(route.lineNumber);
+      } catch (e) {
+        console.warn('[RouteMap] otobüs konumları alınamadı:', e);
+        return;
+      }
       if (cancelled) return;
       setBusPositions(positions);
 

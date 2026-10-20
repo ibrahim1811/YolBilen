@@ -123,7 +123,10 @@ export function GameWordle({ onScoreUpdate, onGameOver }: Props) {
 
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.title, { color: theme.colors.onSurface }]}>{WORD_LENGTH} Harfli Kelime</Text>
+      <View style={[styles.titleCard, { backgroundColor: theme.colors.primary }]}>
+        <MaterialCommunityIcons name="alphabetical-variant" size={18} color="#fff" />
+        <Text style={styles.title}>{WORD_LENGTH} Harfli Kelime</Text>
+      </View>
       <View style={styles.grid}>
         {rows.map((row, i) => (
           <View key={i} style={styles.row}>
@@ -137,7 +140,11 @@ export function GameWordle({ onScoreUpdate, onGameOver }: Props) {
           </View>
         ))}
       </View>
-      {message && <Text style={[styles.message, { color: theme.colors.onSurface }]}>{message}</Text>}
+      {message && (
+        <View style={[styles.messagePill, { backgroundColor: theme.colors.surfaceVariant }]}>
+          <Text style={[styles.message, { color: theme.colors.onSurface }]}>{message}</Text>
+        </View>
+      )}
       {!finished && (
         <View style={styles.keyboard}>
           {KEYBOARD_ROWS.map((row, i) => (
@@ -171,11 +178,25 @@ export function GameWordle({ onScoreUpdate, onGameOver }: Props) {
 
 const styles = StyleSheet.create({
   wrap: { alignItems: 'center', paddingVertical: 12, gap: 12 },
-  title: { fontSize: 16, fontWeight: '700' },
+  titleCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  title: { fontSize: 15, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
   grid: { gap: 6 },
   row: { flexDirection: 'row', gap: 6 },
   cell: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 6 },
   cellText: { fontSize: 18, fontWeight: '800', color: '#fff' },
+  messagePill: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14 },
   message: { fontSize: 14, fontWeight: '600' },
   keyboard: { gap: 6, width: '100%' },
   keyRow: { gap: 4, paddingHorizontal: 8, justifyContent: 'center' },

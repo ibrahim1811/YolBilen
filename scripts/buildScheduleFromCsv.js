@@ -2,10 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 
-const CSV = 'C:/Users/Kayra/Downloads/eshot-otobus-hareketsaatleri.csv';
+const CSV = process.argv[2] ?? 'C:/Users/Kayra/Downloads/eshot-otobus-hareketsaatleri.csv';
 const OUT = path.join(__dirname, '../src/data/schedules.json');
 
 const TARIFE = { '1': 'weekday', '2': 'saturday', '3': 'sunday' };
+
+const toMins = (hhmm) => {
+  const [h, m] = hhmm.split(':').map(Number);
+  return h * 60 + m;
+};
 
 async function main() {
   const schedule = {};
@@ -20,7 +25,7 @@ async function main() {
     const tarife = cols[1]?.trim();
     const gidis = cols[2]?.trim();
     const donus = cols[3]?.trim();
-    if (!hat || !tarife || !gidis || !donus) continue;
+    if (!hat || !tarife || (!gidis && !donus)) continue;
 
     const svc = TARIFE[tarife] ?? 'weekday';
 
@@ -37,8 +42,8 @@ async function main() {
     out[hat] = {};
     for (const [svc, dirs] of Object.entries(bySvc)) {
       out[hat][svc] = {
-        '0': [...dirs['0']].sort(),
-        '1': [...dirs['1']].sort(),
+        '0': [...dirs['0']].map(toMins).sort((a, b) => a - b),
+        '1': [...dirs['1']].map(toMins).sort((a, b) => a - b),
       };
     }
   }

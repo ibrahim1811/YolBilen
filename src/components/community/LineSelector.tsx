@@ -3,6 +3,7 @@ import { View, StyleSheet, FlatList, TouchableOpacity } from 'react-native';
 import { Text, Portal, Modal, Searchbar, useTheme, Divider } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getAllLines } from '../../data/gtfsData';
+import { normalizeSearch } from '../../utils/searchText';
 
 const ALL_LINES = getAllLines().map(r => ({ number: r.lineNum, name: r.name }));
 
@@ -18,8 +19,8 @@ export function LineSelectorModal({ visible, onDismiss, onSelect }: Props) {
 
   const filtered = ALL_LINES.filter(
     (l) =>
-      l.number.toLowerCase().includes(search.toLowerCase()) ||
-      l.name.toLowerCase().includes(search.toLowerCase())
+      l.number.includes(normalizeSearch(search)) ||
+      normalizeSearch(l.name).includes(normalizeSearch(search))
   );
 
   return (

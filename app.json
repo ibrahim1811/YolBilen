@@ -20,11 +20,23 @@
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
       ]
     },
     "plugins": [
-      "expo-location",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Yakındaki durakları ve otobüsleri göstermek için konumunu kullanıyoruz.",
+          "locationAlwaysAndWhenInUsePermission": "Otobüsteyken telefon kilitli olsa da inme durağına yaklaştığında haber verebilmek için konumunu kullanıyoruz.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "isIosBackgroundLocationEnabled": true
+        }
+      ],
       [
         "expo-notifications",
         {
@@ -34,16 +46,12 @@
         }
       ],
       [
-        "react-native-google-mobile-ads",
-        {
-          "androidAppId": "ca-app-pub-5628228356531648~5188986720"
-        }
-      ],
-      [
         "expo-build-properties",
         {
           "android": {
-            "buildArchs": ["arm64-v8a"]
+            "buildArchs": [
+              "arm64-v8a"
+            ]
           }
         }
       ]

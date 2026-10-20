@@ -1,4 +1,4 @@
-import { collection, addDoc, getDocs, orderBy, query, deleteDoc, doc, Timestamp } from 'firebase/firestore';
+import { collection, addDoc, getDocs, orderBy, query, deleteDoc, doc, Timestamp, limit } from 'firebase/firestore';
 import { db } from './config';
 
 export interface Announcement {
@@ -16,21 +16,17 @@ export async function postAnnouncement(data: Omit<Announcement, 'id' | 'createdA
 }
 
 export async function getAnnouncements(): Promise<Announcement[]> {
-  try {
-    const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'));
-    const snap = await getDocs(q);
-    return snap.docs.map(d => {
-      const data = d.data();
-      return {
-        id: d.id,
-        title: data.title,
-        body: data.body,
-        createdAt: (data.createdAt as Timestamp).toDate(),
-      } as Announcement;
-    });
-  } catch {
-    return [];
-  }
+  const q = query(collection(db, 'announcements'), orderBy('createdAt', 'desc'), limit(50));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => {
+    const data = d.data();
+    return {
+      id: d.id,
+      title: data.title,
+      body: data.body,
+      createdAt: (data.createdAt as Timestamp).toDate(),
+    } as Announcement;
+  });
 }
 
 export async function deleteAnnouncement(id: string): Promise<void> {

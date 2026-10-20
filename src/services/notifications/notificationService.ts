@@ -89,7 +89,9 @@ export async function scheduleLocalNotification(
         ? { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: triggerSeconds }
         : null,
     });
-  } catch {}
+  } catch (e) {
+    console.warn('[notification] bildirim planlanamadı:', e);
+  }
 }
 
 export async function cancelAllNotifications(): Promise<void> {

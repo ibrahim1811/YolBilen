@@ -8,12 +8,14 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && (
-        request.auth.token.email == "ibrahimkayracetin2008@gmail.com" ||
-        exists(/databases/$(database)/documents/admin/$(request.auth.token.email))
+        request.auth.token.email_verified == true && (
+          request.auth.token.email == "ibrahimkayracetin2008@gmail.com" ||
+          exists(/databases/$(database)/documents/admin/$(request.auth.token.email))
+        )
       );
     }
 
-    // Kullanıcı kendi profilini okuyup yazabilir (coins, badges, contributionPoints dahil)
+    // Kullanıcı kendi profilini okuyup yazabilir
     match /users/{userId} {
       allow read, write: if isAuthenticated() && request.auth.uid == userId;
     }
@@ -34,12 +36,14 @@ service cloud.firestore {
     // Hat istatistikleri: her feedback gönderiminde increment ile güncelleniyor (client-side aggregate)
     match /line_stats/{lineNumber} {
       allow read: if isAuthenticated();
-      allow write: if isAuthenticated();
+      allow create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     // Otobüs kartı (plaka bazlı) kalabalık raporları
     match /bus_cards/{plate} {
-      allow read, write: if isAuthenticated();
+      allow read, create, update: if isAuthenticated();
+      allow delete: if isAdmin();
     }
 
     // Favori konumlar ve hatlar — ayrı iki koleksiyon
@@ -56,8 +60,12 @@ service cloud.firestore {
     // Topluluk uyarıları (dolu/arızalı/gecikme vb.)
     match /community_alerts/{alertId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      allow update: if isAuthenticated(); // upvote sayacı artırma
+      // Uyarıyı yalnızca admin yayınlar (uygulamada form sadece admine görünüyor)
+      allow create: if isAdmin() && request.resource.data.userId == request.auth.uid;
+      // Kullanıcılar yalnızca upvote sayacını 1 artırabilir
+      allow update: if isAuthenticated()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes'])
+        && request.resource.data.upvotes == resource.data.upvotes + 1;
       allow delete: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
     }
 
@@ -65,19 +73,6 @@ service cloud.firestore {
     match /announcements/{id} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
-    }
-
-    // Coin kodları — admin oluşturur/siler, kullanıcı redeem sırasında usedCount günceller
-    match /redeem_codes/{code} {
-      allow get: if isAuthenticated();
-      allow list: if isAdmin();
-      allow update: if isAuthenticated();
-      allow create, delete: if isAdmin();
-    }
-
-    match /redeem_code_uses/{id} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.uid == request.auth.uid;
     }
 
     // Yolculuk geçmişi — sadece sahibi görür/yazar
@@ -89,6 +84,11 @@ service cloud.firestore {
     // Sefer tarifeleri — sadece okunur (build-gtfs script ile dolduruluyor, client yazmaz)
     match /schedules/{lineNumber} {
       allow read: if isAuthenticated();
+    }
+
+    // Kullanım istatistikleri — istemci sadece ekler, okuyamaz
+    match /telemetry/{id} {
+      allow create: if isAuthenticated();
     }
   }
 }

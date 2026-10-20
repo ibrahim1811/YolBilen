@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { trackScreenView, trackStopOpen } from '../services/telemetry/telemetryService';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { Text, useTheme, Appbar, Surface, Chip, Button, Snackbar, Divider, ActivityIndicator } from 'react-native-paper';
@@ -10,9 +10,9 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, StopArrival } from '../types';
 import { t } from '../i18n';
-import { getApproachingBuses, nearestIztekStopId, minsFromRemainingStops } from '../services/iztek/iztekService';
-import { getNextArrivalMins } from '../services/firebase/scheduleService';
-import { getRouteName } from '../data/gtfsData';
+import { getApproachingBuses, resolveIztekStopId, estimateArrivalMins, isWaitingAtTerminal, IztekError } from '../services/iztek/iztekService';
+import { getScheduledArrivalForStopId } from '../services/gtfs/routingService';
+import { getRouteName, getStopRouteDirs } from '../data/gtfsData';
 import { getLineFeedbacks } from '../services/firebase/firestore';
 import * as Notifications from 'expo-notifications';
 
@@ -39,36 +39,60 @@ export function StopDetailScreen({ navigation, route }: Props) {
 
   const isFavorited = favoriteLocations.some(isSameStop);
 
+  const stopLines = lines && lines.length > 0
+    ? lines
+    : [...new Set((getStopRouteDirs()[stopId] ?? []).map(d => d.lineNum))];
+  const requestSeq = useRef(0);
+
   const loadArrivals = useCallback(async () => {
-    const iztekId = nearestIztekStopId(latitude, longitude);
+    const seq = ++requestSeq.current;
+    const scheduleFallback = (): StopArrival[] => stopLines
+      .flatMap(lineNum => {
+        const mins = getScheduledArrivalForStopId(lineNum, stopId);
+        if (mins === null || mins > 120) return [];
+        const lineName = getRouteName(lineNum) ?? `Hat ${lineNum}`;
+        return [{
+          lineNumber: lineNum,
+          lineName,
+          minutesAway: mins,
+          direction: lineName.split(' - ')[1] ?? 'Son Durak',
+          isLive: false,
+        }];
+      })
+      .sort((a, b) => a.minutesAway - b.minutesAway);
+
+    const iztekId = resolveIztekStopId(stopId, latitude, longitude);
     if (!iztekId) {
-      const fallback: StopArrival[] = (lines ?? [])
-        .map(lineNum => {
-          const lineName = getRouteName(lineNum) ?? `Hat ${lineNum}`;
-          const mins = getNextArrivalMins(lineNum);
-          return {
-            lineNumber: lineNum,
-            lineName,
-            minutesAway: mins,
-            direction: lineName.split(' - ')[1] ?? 'Son Durak',
-          };
-        })
-        .filter(a => a.minutesAway < 999)
-        .sort((a, b) => a.minutesAway - b.minutesAway);
-      setArrivals(fallback);
+      setArrivals(scheduleFallback());
       return;
     }
-    const buses = await getApproachingBuses(iztekId);
-    const mapped: StopArrival[] = buses.map(b => {
-      return {
+    let buses;
+    try {
+      buses = await getApproachingBuses(iztekId);
+    } catch (e) {
+      if (seq !== requestSeq.current) return;
+      console.warn('[StopDetail] canlı veri alınamadı:', e);
+      setSnackbar(e instanceof IztekError && e.rateLimited
+        ? 'Canlı veri limiti doldu, tarife gösteriliyor.'
+        : 'Canlı veri alınamadı, tarife gösteriliyor.');
+      setArrivals(scheduleFallback());
+      return;
+    }
+    if (seq !== requestSeq.current) return;
+    const mapped: StopArrival[] = buses
+      .filter(b => !isWaitingAtTerminal(b, stopId))
+      .map(b => ({
         lineNumber: String(b.hatNumarasi),
         lineName: b.hatAdi || getRouteName(String(b.hatNumarasi)) || `Hat ${b.hatNumarasi}`,
-        minutesAway: minsFromRemainingStops(b.kalanDurakSayisi),
+        minutesAway: estimateArrivalMins(b, stopId),
         direction: b.hatAdi.split(' - ')[1] ?? 'Son Durak',
-      };
-    });
+        isLive: true,
+      }))
+      .sort((a, b) => a.minutesAway - b.minutesAway);
     setArrivals(mapped);
-  }, [latitude, longitude, lines]);
+  }, [stopId, latitude, longitude, stopLines.join(',')]);
+
+  useEffect(() => () => { requestSeq.current++; }, []);
 
   useEffect(() => {
     if (!lines || lines.length === 0) return;
@@ -76,18 +100,15 @@ export function StopDetailScreen({ navigation, route }: Props) {
       const counts = new Array(24).fill(0);
       results.flat().forEach(f => { counts[f.timestamp.getHours()]++; });
       setHourlyData(counts);
-    }).catch(() => {});
+    }).catch(e => console.warn('[StopDetail] yoğunluk verisi alınamadı:', e));
   }, [lines?.join(',')]);
 
   useEffect(() => {
     loadArrivals();
-    const interval = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) { loadArrivals(); return 30; }
-        return c - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
+    setCountdown(30);
+    const interval = setInterval(() => setCountdown(c => (c <= 1 ? 30 : c - 1)), 1000);
+    const refresh = setInterval(loadArrivals, 30_000);
+    return () => { clearInterval(interval); clearInterval(refresh); };
   }, [loadArrivals]);
 
   async function handleRefresh() {
@@ -162,12 +183,12 @@ export function StopDetailScreen({ navigation, route }: Props) {
             {t('stop_passing_lines')}
           </Text>
           <View style={styles.lineChips}>
-            {(lines ?? []).map((lineNum) => (
+            {stopLines.map((lineNum) => (
               <Chip
                 key={lineNum}
                 onPress={() => nav.navigate('LineDetail', {
                   lineNumber: lineNum,
-                  lineName: lineNum,
+                  lineName: getRouteName(lineNum) ?? lineNum,
                 })}
                 style={[styles.lineChip, { backgroundColor: theme.colors.primaryContainer }]}
                 textStyle={[styles.lineChipText, { color: theme.colors.primary }]}
@@ -221,18 +242,26 @@ export function StopDetailScreen({ navigation, route }: Props) {
                     icon="bell-outline"
                     compact
                     onPress={async () => {
-                      const { status } = await Notifications.requestPermissionsAsync();
-                      if (status !== 'granted') { setSnackbar('Bildirim izni verilmedi.'); return; }
-                      const secs = Math.max(30, (a.minutesAway - 2) * 60);
-                      await Notifications.scheduleNotificationAsync({
-                        content: {
-                          title: `${a.lineNumber} Hattı Geliyor`,
-                          body: `${stopName} durağına ~${a.minutesAway} dakika kaldı.`,
-                          sound: true,
-                        },
-                        trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: secs },
-                      });
-                      setSnackbar(`${a.lineNumber} için hatırlatıcı kuruldu.`);
+                      try {
+                        const { status } = await Notifications.requestPermissionsAsync();
+                        if (status !== 'granted') { setSnackbar('Bildirim izni verilmedi.'); return; }
+                        const leadMins = Math.min(2, Math.max(0, a.minutesAway - 1));
+                        const secs = Math.max(30, (a.minutesAway - leadMins) * 60);
+                        await Notifications.scheduleNotificationAsync({
+                          content: {
+                            title: `${a.lineNumber} Hattı Geliyor`,
+                            body: leadMins > 0
+                              ? `${stopName} durağına ~${leadMins} dakika kaldı.`
+                              : `${stopName} durağına geliyor.`,
+                            sound: true,
+                          },
+                          trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: secs },
+                        });
+                        setSnackbar(`${a.lineNumber} için hatırlatıcı kuruldu.`);
+                      } catch (e) {
+                        console.warn('[StopDetail] hatırlatıcı kurulamadı:', e);
+                        setSnackbar('Hatırlatıcı kurulamadı.');
+                      }
                     }}
                     style={styles.bellChip}
                   >

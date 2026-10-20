@@ -1,13 +1,11 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
-import { Text, Surface, useTheme, Avatar, Button, Divider, List, Switch, ProgressBar } from 'react-native-paper';
+import { Text, Surface, useTheme, Avatar, Button, Divider, List, Switch } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { signOut } from '../services/firebase/auth';
 import { useAppStore } from '../store/useAppStore';
 import { NotificationSettings } from '../components/profile/NotificationSettings';
-import { getUserPoints } from '../services/firebase/firestore';
-import { computeBadges, nextBadge } from '../services/gamification/badgeService';
 import { checkIsAdmin } from '../services/firebase/adminService';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -17,26 +15,24 @@ export function ProfileScreen() {
   const theme = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, setUser, isDarkMode, toggleDarkMode, allowLongWalk, setAllowLongWalk, nightSafeMode, toggleNightSafeMode } = useAppStore();
-  const [points, setPoints] = React.useState(user?.contributionPoints ?? 0);
   const [isAdmin, setIsAdmin] = React.useState(false);
 
   React.useEffect(() => {
     if (!user || user.isGuest) {
-      setPoints(0);
       setIsAdmin(false);
       return;
     }
-    getUserPoints(user.uid).then(setPoints).catch(() => {});
     checkIsAdmin(user.email).then(setIsAdmin).catch(() => {});
   }, [user?.uid]);
 
-  const badges = computeBadges(points);
-  const next = nextBadge(points);
-  const nextProgress = next ? Math.min(points / next.requiredPoints, 1) : 1;
-
   async function handleSignOut() {
-    await signOut();
-    setUser(null);
+    try {
+      await signOut();
+      setUser(null);
+    } catch (e) {
+      console.warn('[Profile] çıkış yapılamadı:', e);
+      Alert.alert('Çıkış yapılamadı', 'İnternet bağlantını kontrol edip tekrar dene.');
+    }
   }
 
   return (
@@ -66,60 +62,6 @@ export function ProfileScreen() {
             </View>
           </View>
 
-          <Divider style={styles.divider} />
-
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: theme.colors.primary }]}>{points}</Text>
-              <Text style={[styles.statLabel, { color: theme.colors.onSurfaceVariant }]}>Katkı Puanı</Text>
-            </View>
-            <View style={[styles.statDivider, { backgroundColor: theme.colors.outline }]} />
-            <View style={styles.statItem}>
-              <Text style={[styles.statValue, { color: theme.colors.primary }]}>
-                {badges.filter(b => b.earned).length}
-              </Text>
-              <Text style={[styles.statLabel, { color: theme.colors.onSurfaceVariant }]}>Rozet</Text>
-            </View>
-          </View>
-
-          {next && (
-            <View style={styles.progressSection}>
-              <Text style={[styles.progressLabel, { color: theme.colors.onSurfaceVariant }]}>
-                Sonraki rozet: {next.label} ({next.requiredPoints - points} puan kaldı)
-              </Text>
-              <ProgressBar progress={nextProgress} color={theme.colors.primary} style={styles.progressBar} />
-            </View>
-          )}
-        </Surface>
-
-        <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Rozetler</Text>
-          <View style={styles.badgesGrid}>
-            {badges.map((badge) => (
-              <View
-                key={badge.id}
-                style={[
-                  styles.badgeItem,
-                  {
-                    backgroundColor: badge.earned ? theme.colors.primaryContainer : theme.colors.surfaceVariant,
-                    opacity: badge.earned ? 1 : 0.45,
-                  },
-                ]}
-              >
-                <MaterialCommunityIcons
-                  name={badge.icon as any}
-                  size={28}
-                  color={badge.earned ? theme.colors.primary : theme.colors.onSurfaceVariant}
-                />
-                <Text style={[styles.badgeLabel, { color: badge.earned ? theme.colors.primary : theme.colors.onSurfaceVariant }]}>
-                  {badge.label}
-                </Text>
-                <Text style={[styles.badgePoints, { color: theme.colors.onSurfaceVariant }]}>
-                  {badge.requiredPoints} pt
-                </Text>
-              </View>
-            ))}
-          </View>
         </Surface>
 
         <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
@@ -275,31 +217,8 @@ const styles = StyleSheet.create({
   profileInfo: { flex: 1, gap: 4 },
   profileName: { fontSize: 20, fontWeight: '700' },
   profileEmail: { fontSize: 14 },
-  divider: { marginVertical: 16 },
-  statsRow: { flexDirection: 'row', alignItems: 'center' },
-  statItem: { flex: 1, alignItems: 'center', gap: 4 },
-  statValue: { fontSize: 28, fontWeight: '800' },
-  statLabel: { fontSize: 13 },
-  statDivider: { width: 1, height: 40 },
   card: { borderRadius: 16, padding: 20, gap: 12 },
   sectionTitle: { fontSize: 16, fontWeight: '600' },
-  badgesGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  badgeItem: {
-    width: '47%',
-    padding: 16,
-    borderRadius: 14,
-    alignItems: 'center',
-    gap: 8,
-  },
-  badgeLabel: { fontSize: 13, fontWeight: '500', textAlign: 'center' },
-  badgePoints: { fontSize: 11, textAlign: 'center' },
-  progressSection: { marginTop: 8, gap: 6 },
-  progressLabel: { fontSize: 12 },
-  progressBar: { height: 6, borderRadius: 3 },
   adminBtn: { borderRadius: 12 },
   adminBtnContent: { height: 52 },
   adminBtnLabel: { fontSize: 15, fontWeight: '600' },

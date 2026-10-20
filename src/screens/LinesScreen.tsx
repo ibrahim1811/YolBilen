@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, StyleSheet, SectionList, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, SectionList, TouchableOpacity, Alert } from 'react-native';
 import { Text, Surface, useTheme, Searchbar, TextInput } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 import { getAllLines, getStops } from '../data/gtfsData';
 import type { IzmirStop } from '../data/gtfsData';
+import { normalizeSearch } from '../utils/searchText';
 
 type LineItem = { lineNum: string; name: string };
 type SectionItem = LineItem | IzmirStop;
@@ -28,15 +29,15 @@ export function LinesScreen() {
   const allLines = useMemo(() => getAllLines(), []);
   const allStops = useMemo(() => getStops(), []);
 
-  const lowerSearch = search.toLowerCase();
+  const lowerSearch = normalizeSearch(search);
 
   const filteredLines = useMemo(
     () =>
       lowerSearch
         ? allLines.filter(
             l =>
-              l.lineNum.toLowerCase().includes(lowerSearch) ||
-              l.name.toLowerCase().includes(lowerSearch)
+              l.lineNum.includes(lowerSearch) ||
+              normalizeSearch(l.name).includes(lowerSearch)
           )
         : allLines,
     [allLines, lowerSearch]
@@ -46,7 +47,7 @@ export function LinesScreen() {
     () =>
       lowerSearch.length >= 2
         ? allStops
-            .filter(s => s.name.toLowerCase().includes(lowerSearch))
+            .filter(s => normalizeSearch(s.name).includes(lowerSearch))
             .slice(0, 50)
         : [],
     [allStops, lowerSearch]
@@ -61,8 +62,8 @@ export function LinesScreen() {
 
   function handleToggleFavorite(lineNum: string, lineName: string) {
     const existing = favoriteLines.find(l => l.lineNumber === lineNum);
-    if (existing) removeLine(existing.id).catch(() => {});
-    else addLine(lineNum, lineName).catch(() => {});
+    if (existing) removeLine(existing.id).catch(e => { console.warn('[favori] güncellenemedi:', e); Alert.alert('İşlem başarısız', 'Favori güncellenemedi. Tekrar dene.'); });
+    else addLine(lineNum, lineName).catch(e => { console.warn('[favori] güncellenemedi:', e); Alert.alert('İşlem başarısız', 'Favori güncellenemedi. Tekrar dene.'); });
   }
 
   function renderLine(item: { lineNum: string; name: string }) {

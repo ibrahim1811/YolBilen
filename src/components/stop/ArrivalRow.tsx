@@ -22,6 +22,7 @@ export function ArrivalRow({ arrival, onPress }: Props) {
   const timeLabel = arrival.minutesAway <= 1
     ? t('stop_arrival_now')
     : t('stop_arrival_min')(arrival.minutesAway);
+  const isSchedule = arrival.isLive === false;
 
   return (
     <View style={[styles.row, { borderBottomColor: theme.colors.outline }]}>
@@ -37,8 +38,8 @@ export function ArrivalRow({ arrival, onPress }: Props) {
         </Text>
       </View>
       <View style={[styles.timeBadge, { backgroundColor: color + '18' }]}>
-        <MaterialCommunityIcons name="bus-clock" size={14} color={color} />
-        <Text style={[styles.time, { color }]}>{timeLabel}</Text>
+        <MaterialCommunityIcons name={isSchedule ? 'calendar-clock' : 'bus-clock'} size={14} color={color} />
+        <Text style={[styles.time, { color }]}>{isSchedule ? `${timeLabel} (tarife)` : timeLabel}</Text>
       </View>
     </View>
   );

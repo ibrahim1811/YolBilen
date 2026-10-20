@@ -149,8 +149,6 @@ export const tr = {
   // Profil
   profile_title: 'Profil',
   profile_guest: 'Misafir Kullanıcı',
-  profile_points: 'Katkı Puanı',
-  profile_badges: 'Rozetler',
   profile_dark_mode: 'Koyu Tema',
   profile_privacy: 'Gizlilik Politikası',
   profile_about: 'Hakkında',

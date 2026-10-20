@@ -5,12 +5,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAppStore } from '../../store/useAppStore';
 import { MAX_LIVES, msUntilNextLife } from '../../services/games/lifeService';
-import { addCoins } from '../../services/firebase/coinService';
-import { useRewardedAdReward } from '../../hooks/useRewardedAdReward';
 import { Game2048 } from './Game2048';
 import { GameFlappyBird } from './GameFlappyBird';
 import { GameWordle } from './GameWordle';
-import { GameBlockBlast } from './GameBlockBlast';
 import { GameTetris } from './GameTetris';
 import type { GameId } from '../../types';
 
@@ -24,38 +21,23 @@ const GAME_LABELS: Record<GameId, string> = {
   game2048: '2048',
   flappy: 'Flappy Kuş',
   wordle: 'Kelime Bul',
-  blockblast: 'Block Blast',
   tetris: 'Tetris',
-};
-
-const SCORE_COIN_THRESHOLDS: Record<GameId, { threshold: number; reward: number }> = {
-  game2048: { threshold: 512, reward: 20 },
-  flappy: { threshold: 10, reward: 20 },
-  wordle: { threshold: 400, reward: 20 },
-  blockblast: { threshold: 300, reward: 20 },
-  tetris: { threshold: 500, reward: 20 },
 };
 
 export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
   const theme = useTheme();
-  const user = useAppStore((s) => s.user);
   const gameLives = useAppStore((s) => s.gameLives);
   const lastLifeConsumedAt = useAppStore((s) => s.lastLifeConsumedAt);
   const regenerateLives = useAppStore((s) => s.regenerateLives);
   const consumeLife = useAppStore((s) => s.consumeLife);
   const grantLife = useAppStore((s) => s.grantLife);
   const setHighScore = useAppStore((s) => s.setHighScore);
-  const addCoinsOptimistic = useAppStore((s) => s.addCoinsOptimistic);
   const incrementMissionProgress = useAppStore((s) => s.incrementMissionProgress);
 
   const [liveScore, setLiveScore] = React.useState(0);
   const [sessionKey, setSessionKey] = React.useState(0);
   const [msLeft, setMsLeft] = React.useState<number | null>(null);
   const playedGamesRef = React.useRef<Set<GameId>>(new Set());
-
-  const { isLoaded: rewardedAdLoaded, show: showRewardedAd } = useRewardedAdReward(
-    React.useCallback(() => { if (gameId) grantLife(gameId); }, [gameId, grantLife])
-  );
 
   React.useEffect(() => {
     if (!visible || !gameId) return;
@@ -84,18 +66,12 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
       incrementMissionProgress('playCount', 1);
       incrementMissionProgress('totalScore', finalScore);
       incrementMissionProgress('distinctGames', playedGamesRef.current.size);
-
-      const rule = SCORE_COIN_THRESHOLDS[gameId];
-      if (finalScore >= rule.threshold && user) {
-        addCoins(user.uid, rule.reward).catch(() => {});
-        addCoinsOptimistic(rule.reward);
-      }
     },
-    [gameId, consumeLife, setHighScore, incrementMissionProgress, user, addCoinsOptimistic]
+    [gameId, consumeLife, setHighScore, incrementMissionProgress]
   );
 
-  function handleWatchAdForLife() {
-    if (rewardedAdLoaded) showRewardedAd();
+  function handleFreeLife() {
+    if (gameId) grantLife(gameId);
   }
 
   function renderGame() {
@@ -105,7 +81,6 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
       case 'game2048': return <Game2048 key={sessionKey} {...props} />;
       case 'flappy': return <GameFlappyBird key={sessionKey} {...props} />;
       case 'wordle': return <GameWordle key={sessionKey} {...props} />;
-      case 'blockblast': return <GameBlockBlast key={sessionKey} {...props} />;
       case 'tetris': return <GameTetris key={sessionKey} {...props} />;
       default: return null;
     }
@@ -141,11 +116,11 @@ export function GamePlayModal({ visible, gameId, onDismiss }: Props) {
                 )}
                 <Button
                   mode="contained"
-                  onPress={handleWatchAdForLife}
-                  disabled={!rewardedAdLoaded}
+                  onPress={handleFreeLife}
+                  icon="heart-plus"
                   style={{ marginTop: 12, borderRadius: 10 }}
                 >
-                  {rewardedAdLoaded ? 'Reklam İzleyerek Can Kazan' : 'Reklam yükleniyor…'}
+                  Ücretsiz Can Al
                 </Button>
               </View>
             ) : (

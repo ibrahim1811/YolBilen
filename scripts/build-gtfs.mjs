@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const GTFS = 'C:/Users/Kayra/Downloads/bus-eshot-gtfs';
+const GTFS = join(__dirname, '../assets/gtfs/bus-eshot-gtfs');
 const OUT = join(__dirname, '../src/data/gtfs');
 
 async function readCsv(file) {

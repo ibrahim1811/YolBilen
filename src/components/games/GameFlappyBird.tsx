@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, StyleSheet, Pressable, Dimensions, Animated } from 'react-native';
-import { Text, useTheme } from 'react-native-paper';
+import { Text, Button, useTheme } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useAppStore } from '../../store/useAppStore';
 
 const GAME_WIDTH = Math.min(380, Dimensions.get('window').width - 32);
 const GAME_HEIGHT = Math.min(520, Dimensions.get('window').height * 0.6);
@@ -34,10 +35,13 @@ interface Props {
   onGameOver: (finalScore: number) => void;
 }
 
+type Phase = 'ready' | 'playing' | 'dead';
+
 export function GameFlappyBird({ onScoreUpdate, onGameOver }: Props) {
   const theme = useTheme();
+  const highScore = useAppStore((s) => s.highScores.flappy);
   const [score, setScore] = React.useState(0);
-  const [running, setRunning] = React.useState(true);
+  const [phase, setPhase] = React.useState<Phase>('ready');
   const birdY = React.useRef(new Animated.Value(GAME_HEIGHT / 2)).current;
   const birdRotation = React.useRef(new Animated.Value(0)).current;
   const birdYValue = React.useRef(GAME_HEIGHT / 2);
@@ -49,6 +53,8 @@ export function GameFlappyBird({ onScoreUpdate, onGameOver }: Props) {
   const rafRef = React.useRef<number | null>(null);
   const lastTsRef = React.useRef<number | null>(null);
   const idCounter = React.useRef(0);
+  const phaseRef = React.useRef<Phase>('ready');
+  phaseRef.current = phase;
 
   React.useEffect(() => {
     const listenerId = birdY.addListener(({ value }) => {
@@ -58,15 +64,16 @@ export function GameFlappyBird({ onScoreUpdate, onGameOver }: Props) {
   }, [birdY]);
 
   const endGame = React.useCallback(() => {
-    if (!running) return;
-    setRunning(false);
+    if (phaseRef.current !== 'playing') return;
+    setPhase('dead');
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     onGameOver(scoreRef.current);
-  }, [onGameOver, running]);
+  }, [onGameOver]);
 
   React.useEffect(() => {
+    if (phase !== 'playing') return;
     function loop(ts: number) {
-      if (!running) return;
+      if (phaseRef.current !== 'playing') return;
       const last = lastTsRef.current ?? ts;
       const dt = Math.min(0.05, (ts - last) / 1000);
       lastTsRef.current = ts;
@@ -119,16 +126,33 @@ export function GameFlappyBird({ onScoreUpdate, onGameOver }: Props) {
       rafRef.current = requestAnimationFrame(loop);
     }
 
+    lastTsRef.current = null;
     rafRef.current = requestAnimationFrame(loop);
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running]);
+  }, [phase]);
 
-  function handleJump() {
-    if (!running) return;
+  function handlePress() {
+    if (phase === 'dead') return;
+    if (phase === 'ready') setPhase('playing');
     velocityRef.current = JUMP_VELOCITY;
+  }
+
+  function handleRestart() {
+    pipesRef.current = [];
+    idCounter.current = 0;
+    lastPipeAtRef.current = 0;
+    scoreRef.current = 0;
+    setScore(0);
+    onScoreUpdate(0);
+    velocityRef.current = 0;
+    birdYValue.current = GAME_HEIGHT / 2;
+    birdY.setValue(GAME_HEIGHT / 2);
+    birdRotation.setValue(0);
+    forceRender((n) => n + 1);
+    setPhase('ready');
   }
 
   return (
@@ -137,7 +161,7 @@ export function GameFlappyBird({ onScoreUpdate, onGameOver }: Props) {
         <MaterialCommunityIcons name="star-four-points" size={16} color="#ffb703" />
         <Text style={styles.scoreText}>{score}</Text>
       </View>
-      <Pressable onPress={handleJump}>
+      <Pressable onPress={handlePress}>
         <View style={[styles.field, { width: GAME_WIDTH, height: GAME_HEIGHT }]}>
           {CLOUDS.map((cloud, i) => (
             <View
@@ -199,9 +223,36 @@ export function GameFlappyBird({ onScoreUpdate, onGameOver }: Props) {
           >
             <MaterialCommunityIcons name="bird" size={BIRD_SIZE} color="#ffb703" />
           </Animated.View>
+
+          {phase === 'ready' && (
+            <View style={styles.overlay} pointerEvents="none">
+              <MaterialCommunityIcons name="gesture-tap" size={40} color="#fff" />
+              <Text style={styles.overlayTitle}>Başlamak için dokun</Text>
+            </View>
+          )}
+
+          {phase === 'dead' && (
+            <View style={styles.overlay}>
+              <MaterialCommunityIcons name="emoticon-dead-outline" size={44} color="#fff" />
+              <Text style={styles.overlayTitle}>Oyun Bitti</Text>
+              <Text style={styles.overlayScore}>Skor: {score}</Text>
+              <Text style={styles.overlayHighScore}>En yüksek: {Math.max(highScore, score)}</Text>
+              <Button
+                mode="contained"
+                onPress={handleRestart}
+                style={styles.replayBtn}
+                buttonColor="#ffb703"
+                textColor="#1a1a1a"
+              >
+                Tekrar Oyna
+              </Button>
+            </View>
+          )}
         </View>
       </Pressable>
-      <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>Ekrana dokunarak zıpla</Text>
+      <Text style={[styles.hint, { color: theme.colors.onSurfaceVariant }]}>
+        {phase === 'playing' ? 'Ekrana dokunarak zıpla' : ' '}
+      </Text>
     </View>
   );
 }
@@ -229,6 +280,21 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: '#2f7d3d',
   },
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  overlayTitle: { fontSize: 20, fontWeight: '800', color: '#fff' },
+  overlayScore: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  overlayHighScore: { fontSize: 13, fontWeight: '500', color: '#e0e0e0', marginBottom: 8 },
+  replayBtn: { borderRadius: 10, marginTop: 4 },
   ground: {
     position: 'absolute',
     left: 0,

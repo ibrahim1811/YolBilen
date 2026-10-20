@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, StyleSheet, Dimensions } from 'react-native';
+import { View, StyleSheet, Dimensions, Platform } from 'react-native';
 import { Text, IconButton, useTheme } from 'react-native-paper';
 
 const COLS = 10;
@@ -15,14 +15,25 @@ interface Props {
 
 type PieceType = 'I' | 'O' | 'T' | 'S' | 'Z' | 'J' | 'L';
 
+// Klasik Tetris renk paleti — parça tipiyle bire bir eşleşir
 const PIECE_COLORS: Record<PieceType, string> = {
-  I: '#4dd0e1',
-  O: '#ffd54f',
-  T: '#ba68c8',
-  S: '#81c784',
-  Z: '#e57373',
-  J: '#64b5f6',
-  L: '#ffb74d',
+  I: '#00e5ff',
+  O: '#ffd600',
+  T: '#d500f9',
+  S: '#00e676',
+  Z: '#ff1744',
+  J: '#2979ff',
+  L: '#ff9100',
+};
+
+const PIECE_BORDER_COLORS: Record<PieceType, string> = {
+  I: '#84ffff',
+  O: '#fff59d',
+  T: '#ea80fc',
+  S: '#b9f6ca',
+  Z: '#ff8a80',
+  J: '#82b1ff',
+  L: '#ffd180',
 };
 
 // Her parça için 4 dönüş durumu, 4x4 kutu içindeki [r,c] hücreleri
@@ -219,30 +230,65 @@ export function GameTetris({ onScoreUpdate, onGameOver }: Props) {
     return g;
   }, [board, piece]);
 
+  const nextCells = SHAPES[nextType][0];
+
   return (
     <View style={styles.wrap}>
-      <View style={styles.scoreChip}>
-        <Text style={styles.scoreText}>{score} · {lines} satır</Text>
-      </View>
-
-      <View style={[styles.board, { width: COLS * CELL, height: ROWS * CELL, backgroundColor: theme.colors.surfaceVariant }]}>
-        {displayBoard.map((row, r) => (
-          <View key={r} style={styles.row}>
-            {row.map((cell, c) => (
-              <View
-                key={c}
-                style={[
-                  styles.cell,
-                  {
-                    width: CELL,
-                    height: CELL,
-                    backgroundColor: cell ? PIECE_COLORS[cell] : 'rgba(0,0,0,0.05)',
-                  },
-                ]}
-              />
+      <View style={styles.hud}>
+        <View style={styles.scoreCard}>
+          <Text style={styles.scoreLabel}>SKOR</Text>
+          <Text style={styles.scoreValue}>{score}</Text>
+          <Text style={styles.linesValue}>{lines} satır</Text>
+        </View>
+        <View style={styles.nextCard}>
+          <Text style={styles.scoreLabel}>SIRADAKİ</Text>
+          <View style={styles.nextGrid}>
+            {Array.from({ length: 4 }, (_, r) => (
+              <View key={r} style={styles.nextRow}>
+                {Array.from({ length: 4 }, (_, c) => {
+                  const filled = nextCells.some(([nr, nc]) => nr === r && nc === c);
+                  return (
+                    <View
+                      key={c}
+                      style={[
+                        styles.nextCell,
+                        filled && {
+                          backgroundColor: PIECE_COLORS[nextType],
+                          borderColor: PIECE_BORDER_COLORS[nextType],
+                        },
+                      ]}
+                    />
+                  );
+                })}
+              </View>
             ))}
           </View>
-        ))}
+        </View>
+      </View>
+
+      <View style={[styles.boardFrame, { width: COLS * CELL + 12, height: ROWS * CELL + 12 }]}>
+        <View style={[styles.board, { width: COLS * CELL, height: ROWS * CELL, backgroundColor: theme.colors.surfaceVariant }]}>
+          {displayBoard.map((row, r) => (
+            <View key={r} style={styles.row}>
+              {row.map((cell, c) => (
+                <View
+                  key={c}
+                  style={[
+                    styles.cell,
+                    { width: CELL, height: CELL },
+                    cell
+                      ? {
+                          backgroundColor: PIECE_COLORS[cell],
+                          borderColor: PIECE_BORDER_COLORS[cell],
+                          borderWidth: 1.5,
+                        }
+                      : styles.cellEmpty,
+                  ]}
+                />
+              ))}
+            </View>
+          ))}
+        </View>
       </View>
 
       <View style={styles.controls}>
@@ -256,17 +302,54 @@ export function GameTetris({ onScoreUpdate, onGameOver }: Props) {
   );
 }
 
+const cardShadow = Platform.select({
+  ios: { shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
+  android: { elevation: 4 },
+  default: {},
+});
+
 const styles = StyleSheet.create({
-  wrap: { alignItems: 'center', paddingVertical: 8, gap: 8 },
-  scoreChip: {
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
+  wrap: { alignItems: 'center', paddingVertical: 8, gap: 10 },
+  hud: { flexDirection: 'row', gap: 10 },
+  scoreCard: {
+    backgroundColor: '#161a23',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 14,
+    alignItems: 'center',
+    minWidth: 96,
+    ...cardShadow,
   },
-  scoreText: { fontSize: 15, fontWeight: '800', color: '#fff' },
+  nextCard: {
+    backgroundColor: '#161a23',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 14,
+    alignItems: 'center',
+    gap: 4,
+    ...cardShadow,
+  },
+  scoreLabel: { fontSize: 10, fontWeight: '700', color: '#8a92a6', letterSpacing: 1 },
+  scoreValue: { fontSize: 20, fontWeight: '800', color: '#fff' },
+  linesValue: { fontSize: 12, fontWeight: '600', color: '#8a92a6' },
+  nextGrid: { marginTop: 2 },
+  nextRow: { flexDirection: 'row' },
+  nextCell: {
+    width: 12,
+    height: 12,
+    margin: 1,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  boardFrame: {
+    backgroundColor: '#161a23',
+    borderRadius: 16,
+    padding: 6,
+    ...cardShadow,
+  },
   board: { borderRadius: 10, overflow: 'hidden' },
   row: { flexDirection: 'row' },
-  cell: { borderWidth: 0.5, borderColor: 'rgba(0,0,0,0.06)' },
+  cell: { borderRadius: 3, margin: 0.5 },
+  cellEmpty: { backgroundColor: 'rgba(255,255,255,0.04)', borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.03)' },
   controls: { flexDirection: 'row', alignItems: 'center', gap: 2, marginTop: 4 },
 });

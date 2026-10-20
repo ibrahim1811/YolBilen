@@ -4,15 +4,9 @@ import { Text, Surface, useTheme, Appbar, Chip, TouchableRipple } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { getStops, getStopRouteDirs } from '../data/gtfsData';
+import { getStops, getStopRouteDirs, getRouteName } from '../data/gtfsData';
 import { minsToArrivalLabel } from '../services/firebase/scheduleService';
-import {
-  getApproachingBuses,
-  getLineBusPositions,
-  estimateArrivalFromPosition,
-  minsFromRemainingStops,
-  nearestIztekStopId,
-} from '../services/iztek/iztekService';
+import { getApproachingBuses, resolveIztekStopId, estimateArrivalMins, isWaitingAtTerminal } from '../services/iztek/iztekService';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
 
@@ -44,6 +38,7 @@ export function NearbyStopsScreen({ navigation }: Props) {
   const [stops, setStops] = React.useState<NearbyStop[]>([]);
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
+  const [liveError, setLiveError] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -62,36 +57,29 @@ export function NearbyStopsScreen({ navigation }: Props) {
         .slice(0, 20)
         .map(s => ({ id: s.id, name: s.name, lat: s.lat, lon: s.lon, distanceMeters: Math.round(s.dist), lines: (sr[s.id] ?? []).map(d => d.lineNum).slice(0, 5) }));
 
-      // İZTEK stop ID eşleşmesi + yaklaşan otobüs verisi paralel çekimi
-      const uniqueLines = [...new Set(rawNearby.flatMap(s => s.lines))];
-      const busMap = new Map<string, Awaited<ReturnType<typeof getLineBusPositions>>>();
-      const approachMap = new Map<number, Awaited<ReturnType<typeof getApproachingBuses>>>();
+      // İstek limitine takılmamak için yalnızca en yakın duraklar için canlı veri çekilir
+      const LIVE_STOP_COUNT = 10;
+      const approachMap = new Map<string, Awaited<ReturnType<typeof getApproachingBuses>>>();
+      let liveFailures = 0;
+      await Promise.all(rawNearby.slice(0, LIVE_STOP_COUNT).map(async s => {
+        const iztekId = resolveIztekStopId(s.id, s.lat, s.lon);
+        if (!iztekId) return;
+        try {
+          approachMap.set(s.id, await getApproachingBuses(iztekId));
+        } catch (e) {
+          liveFailures++;
+          console.warn(`[NearbyStops] ${s.id} canlı veri alınamadı:`, e);
+        }
+      }));
+      if (!cancelled) setLiveError(liveFailures > 0 && approachMap.size === 0);
 
-      const iztekIds = rawNearby.map(s => nearestIztekStopId(s.lat, s.lon));
-
-      try {
-        await Promise.all([
-          ...uniqueLines.map(async (l: string) => { busMap.set(l, await getLineBusPositions(l)); }),
-          ...iztekIds.filter((id): id is number => id !== null).map(async (id) => {
-            approachMap.set(id, await getApproachingBuses(id));
-          }),
-        ]);
-      } catch {
-        // Canlı otobüs verisi alınamadı — duraklar yine de mesafeye göre gösterilir
-      }
-
-      const nearby: NearbyStop[] = rawNearby.map((s, i) => {
-        const iztekId = iztekIds[i];
-        const approaching = iztekId ? (approachMap.get(iztekId) ?? []) : [];
-
-        const nextArrivals = s.lines.map((l: string) => {
-          // Öncelik: KalanDurakSayisi (en doğru)
-          const approachBus = approaching.find(b => String(b.hatNumarasi) === l);
-          if (approachBus) return { line: l, mins: minsFromRemainingStops(approachBus.kalanDurakSayisi) };
-          // Fallback: GPS mesafesi
-          const mins = estimateArrivalFromPosition(busMap.get(l) ?? [], s.lat, s.lon) ?? 99;
-          return { line: l, mins };
-        })
+      const nearby: NearbyStop[] = rawNearby.map(s => {
+        const approaching = approachMap.get(s.id) ?? [];
+        const nextArrivals = s.lines
+          .flatMap((l: string) => {
+            const bus = approaching.find(b => String(b.hatNumarasi) === l && !isWaitingAtTerminal(b, s.id));
+            return bus ? [{ line: l, mins: estimateArrivalMins(bus, s.id) }] : [];
+          })
           .filter(a => a.mins < 90)
           .sort((a, b) => a.mins - b.mins)
           .slice(0, 3);
@@ -100,7 +88,10 @@ export function NearbyStopsScreen({ navigation }: Props) {
       });
       if (!cancelled) { setStops(nearby); setLoading(false); }
     }
-    load().catch(() => { if (!cancelled) { setError('Konum alınamadı'); setLoading(false); } });
+    load().catch(e => {
+      console.warn('[NearbyStops] yüklenemedi:', e);
+      if (!cancelled) { setError('Konum alınamadı'); setLoading(false); }
+    });
     return () => { cancelled = true; };
   }, []);
 
@@ -128,6 +119,11 @@ export function NearbyStopsScreen({ navigation }: Props) {
           data={stops}
           keyExtractor={s => s.id}
           contentContainerStyle={styles.list}
+          ListHeaderComponent={liveError ? (
+            <Text style={[styles.loadingText, { color: theme.colors.error, marginBottom: 8 }]}>
+              Canlı otobüs verisi şu an alınamıyor, varış süreleri gösterilemiyor.
+            </Text>
+          ) : null}
           renderItem={({ item }) => (
             <TouchableRipple
               onPress={() => navigation.navigate('StopDetail', {
@@ -183,7 +179,7 @@ export function NearbyStopsScreen({ navigation }: Props) {
                         compact
                         style={styles.lineChip}
                         textStyle={styles.lineChipText}
-                        onPress={() => navigation.navigate('LineDetail', { lineNumber: l, lineName: l })}
+                        onPress={() => navigation.navigate('LineDetail', { lineNumber: l, lineName: getRouteName(l) ?? l })}
                       >
                         {l}
                       </Chip>

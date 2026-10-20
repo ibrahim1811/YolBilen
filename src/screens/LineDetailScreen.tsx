@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { trackScreenView, trackLineOpen } from '../services/telemetry/telemetryService';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { Text, useTheme, Appbar, Surface, IconButton } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -43,7 +43,10 @@ export function LineDetailScreen({ navigation, route }: Props) {
   const toStop = parts[1] ?? '';
   const isRing = isRingRoute(lineName);
 
-  const [serviceType, setServiceType] = useState<'weekday' | 'saturday' | 'sunday'>('weekday');
+  const [serviceType, setServiceType] = useState<'weekday' | 'saturday' | 'sunday'>(() => {
+    const day = new Date().getDay();
+    return day === 0 ? 'sunday' : day === 6 ? 'saturday' : 'weekday';
+  });
   const [rawSchedule, setRawSchedule] = useState<import('../services/firebase/scheduleService').LineSchedule>({});
   const [scheduleLoading, setScheduleLoading] = useState(true);
 
@@ -61,9 +64,12 @@ export function LineDetailScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     setScheduleLoading(true);
+    let cancelled = false;
     getLineScheduleFromFirestore(lineNumber)
-      .then(setRawSchedule)
-      .finally(() => setScheduleLoading(false));
+      .then(s => { if (!cancelled) setRawSchedule(s); })
+      .catch(e => console.warn('[LineDetail] tarife yüklenemedi:', e))
+      .finally(() => { if (!cancelled) setScheduleLoading(false); });
+    return () => { cancelled = true; };
   }, [lineNumber]);
 
   const schedule = React.useMemo(
@@ -83,8 +89,8 @@ export function LineDetailScreen({ navigation, route }: Props) {
 
   function handleToggleFavorite() {
     const existing = favoriteLines.find(l => l.lineNumber === lineNumber);
-    if (existing) removeLine(existing.id).catch(() => {});
-    else addLine(lineNumber, lineName).catch(() => {});
+    if (existing) removeLine(existing.id).catch(e => { console.warn('[favori] güncellenemedi:', e); Alert.alert('İşlem başarısız', 'Favori güncellenemedi. Tekrar dene.'); });
+    else addLine(lineNumber, lineName).catch(e => { console.warn('[favori] güncellenemedi:', e); Alert.alert('İşlem başarısız', 'Favori güncellenemedi. Tekrar dene.'); });
   }
 
   const isFav = isLineFavorited(lineNumber);

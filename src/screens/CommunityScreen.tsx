@@ -12,7 +12,7 @@ import { CrowdMapModal } from '../components/community/CrowdMapModal';
 import { submitFeedback, getRecentFeedbacks } from '../services/firebase/firestore';
 import { postAlert, getActiveAlerts, upvoteAlert, ALERT_LABELS, ALERT_ICONS, ALERT_EXPIRY_MINS } from '../services/firebase/alertService';
 import { checkIsAdmin } from '../services/firebase/adminService';
-import { getApproachingBuses, nearestIztekStopId, type ApproachingBus } from '../services/iztek/iztekService';
+import { getApproachingBuses, nearestIztekStopId, IztekError, type ApproachingBus } from '../services/iztek/iztekService';
 import { useAppStore } from '../store/useAppStore';
 import type { Feedback, CommunityAlert } from '../types';
 
@@ -114,8 +114,11 @@ export function CommunityScreen() {
       if (buses.length === 0) { setSnackbar('Şu an yaklaşan otobüs yok.'); return; }
       setNearbyBuses(buses);
       setShowBusList(true);
-    } catch {
-      setSnackbar('Konum alınamadı.');
+    } catch (e) {
+      console.warn('[Community] yakındaki otobüsler alınamadı:', e);
+      setSnackbar(e instanceof IztekError
+        ? (e.rateLimited ? 'Canlı veri limiti doldu, biraz sonra tekrar dene.' : 'Canlı otobüs verisi alınamadı.')
+        : 'Konum alınamadı.');
     } finally {
       setDetectingBus(false);
     }
@@ -143,7 +146,7 @@ export function CommunityScreen() {
         feedbackLon = pos.coords.longitude;
       } catch {}
 
-      const { pointsAwarded } = await submitFeedback({
+      await submitFeedback({
         userId: user.uid,
         routeId: `line-${selectedLine.number}`,
         lineNumber: selectedLine.number,
@@ -157,8 +160,7 @@ export function CommunityScreen() {
         ...(feedbackLat !== undefined ? { latitude: feedbackLat, longitude: feedbackLon } : {}),
       });
       trackFeedbackSubmit(!!plateInput.trim());
-      setSnackbar(pointsAwarded ? 'Teşekkürler! +10 puan kazandınız.' : 'Teşekkürler! Geri bildirimin kaydedildi.');
-      if (user && pointsAwarded) setUser({ ...user, contributionPoints: (user.contributionPoints ?? 0) + 10 });
+      setSnackbar('Teşekkürler! Geri bildirimin kaydedildi.');
       setSelectedLine(null);
       setSelectedBusId(null);
       setPlateInput('');

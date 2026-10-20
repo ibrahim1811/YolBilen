@@ -1,5 +1,6 @@
 import {
   collection, addDoc, getDocs, query, where, orderBy, Timestamp, doc, updateDoc, increment, deleteDoc,
+  limit,
 } from 'firebase/firestore';
 import { db, auth } from './config';
 import type { CommunityAlert } from '../../types';
@@ -38,24 +39,21 @@ export async function postAlert(alert: Omit<CommunityAlert, 'id' | 'upvotes'>): 
 }
 
 export async function getActiveAlerts(): Promise<CommunityAlert[]> {
-  try {
-    const q = query(
-      collection(db, 'community_alerts'),
-      where('expiresAt', '>', Timestamp.now()),
-      orderBy('expiresAt', 'asc')
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map(d => {
-      const data = d.data();
-      return {
-        id: d.id, ...data,
-        createdAt: (data.createdAt as Timestamp).toDate(),
-        expiresAt: (data.expiresAt as Timestamp).toDate(),
-      } as CommunityAlert;
-    });
-  } catch {
-    return [];
-  }
+  const q = query(
+    collection(db, 'community_alerts'),
+    where('expiresAt', '>', Timestamp.now()),
+    orderBy('expiresAt', 'asc'),
+    limit(50)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => {
+    const data = d.data();
+    return {
+      id: d.id, ...data,
+      createdAt: (data.createdAt as Timestamp).toDate(),
+      expiresAt: (data.expiresAt as Timestamp).toDate(),
+    } as CommunityAlert;
+  });
 }
 
 export async function upvoteAlert(alertId: string): Promise<void> {

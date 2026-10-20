@@ -16,7 +16,7 @@ type ServiceType = 'weekday' | 'saturday' | 'sunday';
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 gün
 
 function cacheKey(lineNumber: string) {
-  return `sched:${lineNumber}`;
+  return `sched:v2:${lineNumber}`;
 }
 
 async function getCached(lineNumber: string): Promise<LineSchedule | null> {
@@ -81,14 +81,12 @@ export async function getLineScheduleFromFirestore(lineNumber: string): Promise<
       await setCache(lineNumber, schedule);
       return schedule;
     }
-  } catch {}
-
-  const fallback = bundledFallback(lineNumber);
-  if (fallback) {
-    await setCache(lineNumber, fallback);
-    return fallback;
+  } catch (e) {
+    console.warn(`[schedule] ${lineNumber} Firestore'dan alınamadı, uygulama içi tarife kullanılıyor:`, e);
   }
-  return {};
+
+  // Yedek veri önbelleğe yazılmaz; böylece bir sonraki açılışta Firestore yeniden denenir.
+  return bundledFallback(lineNumber) ?? {};
 }
 
 export function getScheduleForDay(schedule: LineSchedule, serviceType: ServiceType) {
@@ -111,53 +109,34 @@ function minsUntil(depMins: number, nowMins: number): number {
   return depMins >= nowMins ? depMins - nowMins : depMins + 1440 - nowMins;
 }
 
-export function getNextArrivalMins(lineNumber: string): number {
-  const schedule = bundledFallback(lineNumber);
-  const svcType = todayServiceType();
-  const times = [
-    ...(schedule?.[svcType]?.gidis ?? []),
-    ...(schedule?.[svcType]?.donus ?? []),
-  ];
-  if (times.length === 0) return 15;
-  const now = new Date();
-  const nowMins = now.getHours() * 60 + now.getMinutes();
-  const result = Math.min(...times.map(t => minsUntil(t, nowMins)));
-  return isFinite(result) && result <= 90 ? result : 999;
-}
+export const NO_SERVICE_MINS = 999;
 
-// stopPositionT: 0 = gidiş terminali, 1 = dönüş terminali
-// routeDurationMins: hattın uçtan uca tahmini süresi
-export function getNextArrivalMinsForStop(
+// Durağa geliş: ilgili yöndeki terminal kalkışlarına terminal→durak yolculuk süresi eklenir.
+// afterMins: bu süreden önce gelen otobüsler (yetişilemeyecekler) atlanır. Bugün sefer kalmadıysa null.
+export function getScheduledArrivalAtStop(
   lineNumber: string,
-  stopPositionT: number,
-  routeDurationMins: number
-): number {
-  const schedule = bundledFallback(lineNumber);
-  const svcType = todayServiceType();
-  const gidisTimes = schedule?.[svcType]?.gidis ?? [];
-  const donusTimes = schedule?.[svcType]?.donus ?? [];
+  dir: 0 | 1,
+  offsetMins: number,
+  afterMins = 0
+): number | null {
+  const svc = bundledFallback(lineNumber)?.[todayServiceType()];
+  const times = dir === 0 ? svc?.gidis : svc?.donus;
+  if (!times || times.length === 0) return null;
   const now = new Date();
   const nowMins = now.getHours() * 60 + now.getMinutes();
-
-  function earliest(times: number[], offsetMins: number): number {
-    if (times.length === 0) return Infinity;
-    const mins = times.map(dep => minsUntil(dep, nowMins - offsetMins) + offsetMins);
-    return Math.min(...mins);
+  let best = Infinity;
+  for (const dep of times) {
+    for (const d of dep < 180 ? [dep, dep + 1440] : [dep]) {
+      const wait = d + offsetMins - nowMins;
+      if (wait >= afterMins && wait < best) best = wait;
+    }
   }
-
-  const gidisOffset = Math.round(stopPositionT * routeDurationMins);
-  const donusOffset = Math.round((1 - stopPositionT) * routeDurationMins);
-
-  const best = Math.min(
-    earliest(gidisTimes, gidisOffset),
-    earliest(donusTimes, donusOffset)
-  );
-  return isFinite(best) && best <= 90 ? best : 999;
+  return isFinite(best) ? best : null;
 }
 
 export function minsToArrivalLabel(mins: number): string {
+  if (mins >= NO_SERVICE_MINS) return 'Bugün sefer yok';
   if (mins <= 1) return 'Şimdi';
-  if (mins > 90) return 'Yarın';
   if (mins < 60) return `~${mins} dk`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;

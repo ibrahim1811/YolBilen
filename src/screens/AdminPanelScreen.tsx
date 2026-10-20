@@ -6,14 +6,12 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getActiveAlerts, deleteAlert, postAlert, ALERT_LABELS, ALERT_ICONS, ALERT_EXPIRY_MINS } from '../services/firebase/alertService';
 import { postAnnouncement, getAnnouncements, deleteAnnouncement } from '../services/firebase/announcementService';
 import type { Announcement } from '../services/firebase/announcementService';
-import { createRedeemCode, getRedeemCodes, deleteRedeemCode } from '../services/firebase/coinService';
-import type { RedeemCode } from '../services/firebase/coinService';
 import { useAppStore } from '../store/useAppStore';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, CommunityAlert } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'AdminPanel'>;
-type Tab = 'alerts' | 'announcements' | 'codes';
+type Tab = 'alerts' | 'announcements';
 
 export function AdminPanelScreen({ navigation }: Props) {
   const theme = useTheme();
@@ -44,14 +42,6 @@ export function AdminPanelScreen({ navigation }: Props) {
   const [annPosting, setAnnPosting] = useState(false);
   const [annDeleting, setAnnDeleting] = useState<string | null>(null);
 
-  // Coin Kodları state
-  const [codes, setCodes] = useState<RedeemCode[]>([]);
-  const [newCode, setNewCode] = useState('');
-  const [newCoinAmount, setNewCoinAmount] = useState('');
-  const [newMaxUses, setNewMaxUses] = useState('');
-  const [codePosting, setCodePosting] = useState(false);
-  const [codeDeleting, setCodeDeleting] = useState<string | null>(null);
-
   const loadAlerts = useCallback(async () => {
     try {
       const data = await getActiveAlerts();
@@ -67,47 +57,15 @@ export function AdminPanelScreen({ navigation }: Props) {
     } catch (e) { setErrorMsg(describeError(e)); }
   }, []);
 
-  const loadCodes = useCallback(async () => {
-    try {
-      const data = await getRedeemCodes();
-      setCodes(data);
-    } catch (e) { setErrorMsg(describeError(e)); }
-  }, []);
-
   React.useEffect(() => {
     loadAlerts();
     loadAnnouncements();
-    loadCodes();
-  }, [loadAlerts, loadAnnouncements, loadCodes]);
+  }, [loadAlerts, loadAnnouncements]);
 
   async function handleRefresh() {
     setRefreshing(true);
-    await Promise.all([loadAlerts(), loadAnnouncements(), loadCodes()]);
+    await Promise.all([loadAlerts(), loadAnnouncements()]);
     setRefreshing(false);
-  }
-
-  async function handleCreateCode() {
-    const coinAmount = Number(newCoinAmount);
-    const maxUses = Number(newMaxUses);
-    if (!newCode.trim() || !coinAmount || !maxUses) return;
-    setCodePosting(true);
-    try {
-      await createRedeemCode(newCode.trim(), coinAmount, maxUses, user?.email ?? null);
-      setNewCode('');
-      setNewCoinAmount('');
-      setNewMaxUses('');
-      await loadCodes();
-    } catch (e) { setErrorMsg(describeError(e)); }
-    setCodePosting(false);
-  }
-
-  async function handleDeleteCode(code: string) {
-    setCodeDeleting(code);
-    try {
-      await deleteRedeemCode(code);
-      setCodes(prev => prev.filter(c => c.code !== code));
-    } catch (e) { setErrorMsg(describeError(e)); }
-    setCodeDeleting(null);
   }
 
   async function handlePostAlert() {
@@ -183,14 +141,6 @@ export function AdminPanelScreen({ navigation }: Props) {
             Duyurular
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'codes' && { borderBottomColor: theme.colors.primary, borderBottomWidth: 2 }]}
-          onPress={() => setActiveTab('codes')}
-        >
-          <Text style={[styles.tabLabel, { color: activeTab === 'codes' ? theme.colors.primary : theme.colors.onSurfaceVariant }]}>
-            Coin Kodları
-          </Text>
-        </TouchableOpacity>
       </View>
 
       {activeTab === 'alerts' ? (
@@ -263,7 +213,7 @@ export function AdminPanelScreen({ navigation }: Props) {
             </Surface>
           )}
         />
-      ) : activeTab === 'announcements' ? (
+      ) : (
         <FlatList
           data={announcements}
           keyExtractor={a => a.id!}
@@ -311,75 +261,6 @@ export function AdminPanelScreen({ navigation }: Props) {
                   </Text>
                 </View>
                 <Button mode="text" compact textColor="#D93025" loading={annDeleting === item.id} disabled={annDeleting === item.id} onPress={() => handleDeleteAnnouncement(item.id!)}>
-                  Sil
-                </Button>
-              </View>
-            </Surface>
-          )}
-        />
-      ) : (
-        <FlatList
-          data={codes}
-          keyExtractor={c => c.code}
-          contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              <MaterialCommunityIcons name="ticket-percent-outline" size={48} color={theme.colors.onSurfaceVariant} />
-              <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>Kod yok</Text>
-            </View>
-          }
-          ListHeaderComponent={
-            <Surface style={[styles.createCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
-              <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Yeni Coin Kodu</Text>
-              <TextInput
-                placeholder="Kod (örn: YOLBUL50)"
-                placeholderTextColor={theme.colors.onSurfaceVariant}
-                value={newCode}
-                onChangeText={setNewCode}
-                autoCapitalize="characters"
-                style={[styles.lineInput, { color: theme.colors.onSurface, borderColor: theme.colors.outline }]}
-              />
-              <TextInput
-                placeholder="Coin miktarı"
-                placeholderTextColor={theme.colors.onSurfaceVariant}
-                value={newCoinAmount}
-                onChangeText={setNewCoinAmount}
-                keyboardType="numeric"
-                style={[styles.lineInput, { color: theme.colors.onSurface, borderColor: theme.colors.outline }]}
-              />
-              <TextInput
-                placeholder="Kullanım limiti (örn: 100)"
-                placeholderTextColor={theme.colors.onSurfaceVariant}
-                value={newMaxUses}
-                onChangeText={setNewMaxUses}
-                keyboardType="numeric"
-                style={[styles.lineInput, { color: theme.colors.onSurface, borderColor: theme.colors.outline }]}
-              />
-              <Button
-                mode="contained"
-                onPress={handleCreateCode}
-                loading={codePosting}
-                disabled={!newCode.trim() || !newCoinAmount || !newMaxUses || codePosting}
-                style={{ borderRadius: 10 }}
-              >
-                Oluştur
-              </Button>
-            </Surface>
-          }
-          renderItem={({ item }) => (
-            <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
-              <View style={styles.cardRow}>
-                <MaterialCommunityIcons name="ticket-percent" size={22} color={theme.colors.primary} />
-                <View style={styles.cardInfo}>
-                  <Text style={[styles.cardTitle, { color: theme.colors.onSurface }]}>
-                    {item.code} — {item.coinAmount} coin
-                  </Text>
-                  <Text style={[styles.cardSub, { color: theme.colors.onSurfaceVariant }]}>
-                    Kullanım: {item.usedCount}/{item.maxUses}
-                  </Text>
-                </View>
-                <Button mode="text" compact textColor="#D93025" loading={codeDeleting === item.code} disabled={codeDeleting === item.code} onPress={() => handleDeleteCode(item.code)}>
                   Sil
                 </Button>
               </View>

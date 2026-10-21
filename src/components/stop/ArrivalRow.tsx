@@ -1,14 +1,14 @@
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
-import { Text, useTheme } from 'react-native-paper';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { Text, useTheme, IconButton } from 'react-native-paper';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { t } from '../../i18n';
 import { getLineColor, getLineMode, TRANSIT_MODE_ICON } from '../../data/gtfsData';
 import type { StopArrival } from '../../types';
 
 interface Props {
   arrival: StopArrival;
   onPress: () => void;
+  onRemind?: () => void;
 }
 
 function clockAfter(mins: number): string {
@@ -22,46 +22,63 @@ function arrivalColor(min: number): string {
   return '#34A853';
 }
 
-export function ArrivalRow({ arrival, onPress }: Props) {
+function formatDistance(m: number): string {
+  if (m <= 0) return 'Durakta';
+  return m < 1000 ? `${m} m uzakta` : `${(m / 1000).toFixed(1).replace('.', ',')} km uzakta`;
+}
+
+export function ArrivalRow({ arrival, onPress, onRemind }: Props) {
   const theme = useTheme();
-  const color = arrivalColor(arrival.minutesAway);
-  const timeLabel = arrival.minutesAway <= 1
-    ? t('stop_arrival_now')
-    : t('stop_arrival_min')(arrival.minutesAway);
   const isSchedule = arrival.isLive === false;
+  const color = isSchedule ? theme.colors.onSurfaceVariant : arrivalColor(arrival.minutesAway);
   const mode = getLineMode(arrival.lineNumber);
   const lineColor = getLineColor(arrival.lineNumber);
-  const clock = isSchedule ? clockAfter(arrival.minutesAway) : null;
+  const atStop = !isSchedule && (arrival.minutesAway <= 1 || arrival.distanceM === 0);
+
+  const subline = isSchedule
+    ? `Tarife · ${clockAfter(arrival.minutesAway)}`
+    : arrival.distanceM !== undefined ? formatDistance(arrival.distanceM) : arrival.lineName;
 
   return (
-    <View style={[styles.row, { borderBottomColor: theme.colors.outline }]}>
-      <View style={[styles.badge, { backgroundColor: lineColor ?? theme.colors.primaryContainer }]}>
-        {mode === 'bus' ? (
-          <Text style={[styles.lineNum, { color: theme.colors.primary }]}>{arrival.lineNumber}</Text>
-        ) : (
-          <>
-            <MaterialCommunityIcons name={TRANSIT_MODE_ICON[mode]} size={16} color="#FFF" />
-            {mode !== 'ferry' && (
-              <Text style={[styles.lineNumSmall, { color: '#FFF' }]} numberOfLines={1}>
-                {arrival.lineNumber.replace('İZBAN-', 'İZ')}
-              </Text>
-            )}
-          </>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+      <View style={[styles.row, { borderBottomColor: theme.colors.outlineVariant }]}>
+        <View style={[styles.badge, { backgroundColor: lineColor ?? theme.colors.primaryContainer }]}>
+          {mode === 'bus' ? (
+            <Text style={[styles.lineNum, { color: theme.colors.primary }]}>{arrival.lineNumber}</Text>
+          ) : (
+            <>
+              <MaterialCommunityIcons name={TRANSIT_MODE_ICON[mode]} size={18} color="#FFF" />
+              {mode !== 'ferry' && (
+                <Text style={[styles.lineNumSmall, { color: '#FFF' }]} numberOfLines={1}>
+                  {arrival.lineNumber.replace('İZBAN-', 'İZ')}
+                </Text>
+              )}
+            </>
+          )}
+        </View>
+        <View style={styles.info}>
+          <Text style={[styles.direction, { color: theme.colors.onSurface }]} numberOfLines={1}>
+            {arrival.direction}
+          </Text>
+          <Text style={[styles.subline, { color: theme.colors.onSurfaceVariant }]} numberOfLines={1}>
+            {subline}
+          </Text>
+        </View>
+        <View style={styles.timeCol}>
+          {atStop ? (
+            <Text style={[styles.nowText, { color }]}>Durakta</Text>
+          ) : (
+            <>
+              <Text style={[styles.minutes, { color }]}>{arrival.minutesAway}</Text>
+              <Text style={[styles.minLabel, { color }]}>dk</Text>
+            </>
+          )}
+        </View>
+        {onRemind && (
+          <IconButton icon="bell-outline" size={20} onPress={onRemind} style={styles.bell} />
         )}
       </View>
-      <View style={styles.info}>
-        <Text style={[styles.direction, { color: theme.colors.onSurface }]} numberOfLines={1}>
-          {arrival.direction}
-        </Text>
-        <Text style={[styles.lineName, { color: theme.colors.onSurfaceVariant }]} numberOfLines={1}>
-          {arrival.lineName}
-        </Text>
-      </View>
-      <View style={[styles.timeBadge, { backgroundColor: color + '18' }]}>
-        <MaterialCommunityIcons name={isSchedule ? 'calendar-clock' : 'bus-clock'} size={14} color={color} />
-        <Text style={[styles.time, { color }]}>{isSchedule ? `${timeLabel} · ${clock}` : timeLabel}</Text>
-      </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -75,23 +92,19 @@ const styles = StyleSheet.create({
   },
   badge: {
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-    minWidth: 48,
+    paddingVertical: 10,
+    borderRadius: 12,
+    minWidth: 60,
     alignItems: 'center',
   },
-  lineNum: { fontWeight: '800', fontSize: 14 },
-  lineNumSmall: { fontWeight: '800', fontSize: 10 },
-  info: { flex: 1, gap: 2 },
-  direction: { fontSize: 14, fontWeight: '600' },
-  lineName: { fontSize: 12 },
-  timeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  time: { fontSize: 13, fontWeight: '700' },
+  lineNum: { fontWeight: '800', fontSize: 18 },
+  lineNumSmall: { fontWeight: '800', fontSize: 11 },
+  info: { flex: 1, gap: 3 },
+  direction: { fontSize: 16, fontWeight: '700' },
+  subline: { fontSize: 13 },
+  timeCol: { alignItems: 'center', minWidth: 52 },
+  minutes: { fontSize: 26, fontWeight: '800', lineHeight: 28 },
+  minLabel: { fontSize: 12, fontWeight: '700' },
+  nowText: { fontSize: 15, fontWeight: '800' },
+  bell: { margin: 0 },
 });

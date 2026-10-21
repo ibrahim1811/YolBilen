@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useTheme } from 'react-native-paper';
 import { HomeScreen } from '../screens/HomeScreen';
 import { LinesScreen } from '../screens/LinesScreen';
+import { StopsScreen } from '../screens/StopsScreen';
 import { CommunityScreen } from '../screens/CommunityScreen';
 import { GamesScreen } from '../screens/GamesScreen';
 import { ProfileScreen } from '../screens/ProfileScreen';
@@ -14,6 +15,7 @@ const Tab = createBottomTabNavigator<TabParamList>();
 const tabIcons: Record<string, { active: string; inactive: string }> = {
   Home: { active: 'home', inactive: 'home-outline' },
   Lines: { active: 'bus', inactive: 'bus' },
+  Stops: { active: 'bus-stop', inactive: 'bus-stop' },
   Community: { active: 'account-group', inactive: 'account-group-outline' },
   Games: { active: 'gamepad-variant', inactive: 'gamepad-variant-outline' },
   Profile: { active: 'account-circle', inactive: 'account-circle-outline' },
@@ -22,6 +24,7 @@ const tabIcons: Record<string, { active: string; inactive: string }> = {
 const tabLabels: Record<string, string> = {
   Home: 'Ana Sayfa',
   Lines: 'Hatlar',
+  Stops: 'Duraklar',
   Community: 'Topluluk',
   Games: 'Oyunlar',
   Profile: 'Profil',
@@ -63,6 +66,7 @@ export function TabNavigator() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Lines" component={LinesScreen} />
+      <Tab.Screen name="Stops" component={StopsScreen} />
       <Tab.Screen name="Community" component={CommunityScreen} />
       <Tab.Screen name="Games" component={GamesScreen} />
       <Tab.Screen name="Profile" component={ProfileScreen} />

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { trackScreenView, trackStopOpen } from '../services/telemetry/telemetryService';
 import { View, StyleSheet, ScrollView, RefreshControl } from 'react-native';
-import { Text, useTheme, Appbar, Surface, Chip, Button, Snackbar, Divider, ActivityIndicator } from 'react-native-paper';
+import { Text, useTheme, Appbar, Surface, Chip, Snackbar, Divider, ActivityIndicator, IconButton, SegmentedButtons } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ArrivalRow } from '../components/stop/ArrivalRow';
@@ -29,6 +29,9 @@ export function StopDetailScreen({ navigation, route }: Props) {
 
   const { favoriteLocations, addLocation, removeLocation } = useFavorites();
   const [arrivals, setArrivals] = useState<StopArrival[]>([]);
+  const [schedule, setSchedule] = useState<StopArrival[]>([]);
+  const [tab, setTab] = useState<'live' | 'schedule'>('live');
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [snackbar, setSnackbar] = useState('');
   const [countdown, setCountdown] = useState(30);
@@ -49,6 +52,15 @@ export function StopDetailScreen({ navigation, route }: Props) {
 
   const loadArrivals = useCallback(async () => {
     const seq = ++requestSeq.current;
+    setLoading(true);
+    try {
+      await loadArrivalsInner(seq);
+    } finally {
+      if (seq === requestSeq.current) setLoading(false);
+    }
+  }, [stopId, latitude, longitude, stopLines.join(',')]);
+
+  const loadArrivalsInner = async (seq: number) => {
     const scheduleFallback = (): StopArrival[] => stopLines
       .flatMap(lineNum => {
         const mins = getScheduledArrivalForStopId(lineNum, stopId);
@@ -64,8 +76,10 @@ export function StopDetailScreen({ navigation, route }: Props) {
       })
       .sort((a, b) => a.minutesAway - b.minutesAway);
 
+    if (!isRailStop) setSchedule(scheduleFallback());
+
     if (isRailStop) {
-      setArrivals(
+      const rail = (
         (getStopRouteDirs()[stopId] ?? [])
           .flatMap(({ lineNum, dir }) => {
             const stops = getOrderedStopsForDir(lineNum, dir);
@@ -85,6 +99,8 @@ export function StopDetailScreen({ navigation, route }: Props) {
           })
           .sort((a, b) => a.minutesAway - b.minutesAway)
       );
+      setArrivals(rail);
+      setSchedule(rail);
       return;
     }
 
@@ -114,10 +130,11 @@ export function StopDetailScreen({ navigation, route }: Props) {
         minutesAway: estimateArrivalMins(b, stopId),
         direction: b.hatAdi.split(' - ')[1] ?? 'Son Durak',
         isLive: true,
+        distanceM: b.mesafeM,
       }))
       .sort((a, b) => a.minutesAway - b.minutesAway);
     setArrivals(mapped);
-  }, [stopId, latitude, longitude, stopLines.join(',')]);
+  };
 
   useEffect(() => () => { requestSeq.current++; }, []);
 
@@ -145,6 +162,29 @@ export function StopDetailScreen({ navigation, route }: Props) {
     await loadArrivals();
     setCountdown(30);
     setRefreshing(false);
+  }
+
+  async function scheduleReminder(a: StopArrival) {
+    try {
+      const { status } = await Notifications.requestPermissionsAsync();
+      if (status !== 'granted') { setSnackbar('Bildirim izni verilmedi.'); return; }
+      const leadMins = Math.min(2, Math.max(0, a.minutesAway - 1));
+      const secs = Math.max(30, (a.minutesAway - leadMins) * 60);
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: `${a.lineNumber} Hattı Geliyor`,
+          body: leadMins > 0
+            ? `${stopName} durağına ~${leadMins} dakika kaldı.`
+            : `${stopName} durağına geliyor.`,
+          sound: true,
+        },
+        trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: secs },
+      });
+      setSnackbar(`${a.lineNumber} için hatırlatıcı kuruldu.`);
+    } catch (e) {
+      console.warn('[StopDetail] hatırlatıcı kurulamadı:', e);
+      setSnackbar('Hatırlatıcı kurulamadı.');
+    }
   }
 
   async function handleToggleFavorite() {
@@ -185,122 +225,88 @@ export function StopDetailScreen({ navigation, route }: Props) {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
       >
-        {/* Durak Hero */}
-        <Surface style={[styles.heroCard, { backgroundColor: theme.colors.surface }]} elevation={2}>
-          <View style={[styles.heroIcon, { backgroundColor: theme.colors.primaryContainer }]}>
-            <MaterialCommunityIcons name={isRailStop ? TRANSIT_MODE_ICON[stopMode(stopId)] : 'bus-stop'} size={36} color={theme.colors.primary} />
-          </View>
-          <Text style={[styles.stopName, { color: theme.colors.onSurface }]}>{stopName}</Text>
-          <Text style={[styles.stopCoords, { color: theme.colors.onSurfaceVariant }]}>
-            {latitude.toFixed(4)}, {longitude.toFixed(4)}
-          </Text>
-
-          <Button
-            mode={isFavorited ? 'outlined' : 'contained-tonal'}
-            onPress={handleToggleFavorite}
-            icon={isFavorited ? 'star' : 'star-outline'}
-            style={styles.favBtn}
-            compact
-          >
-            {isFavorited ? t('stop_remove_favorite') : t('stop_add_favorite')}
-          </Button>
-        </Surface>
-
-        {/* Geçen Hatlar */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-            {t('stop_passing_lines')}
-          </Text>
-          <View style={styles.lineChips}>
-            {stopLines.map((lineNum) => (
-              <Chip
-                key={lineNum}
-                onPress={() => nav.navigate('LineDetail', {
-                  lineNumber: lineNum,
-                  lineName: getRouteName(lineNum) ?? lineNum,
-                })}
-                icon={getLineMode(lineNum) === 'bus' ? undefined : TRANSIT_MODE_ICON[getLineMode(lineNum)]}
-                style={[styles.lineChip, { backgroundColor: theme.colors.primaryContainer }]}
-                textStyle={[styles.lineChipText, { color: theme.colors.primary }]}
-              >
-                {getLineMode(lineNum) === 'ferry' ? getRouteName(lineNum) ?? lineNum : lineNum}
-              </Chip>
-            ))}
-          </View>
+        {/* Durak başlığı (kompakt) */}
+        <View style={styles.stopHeader}>
+          <MaterialCommunityIcons name={isRailStop ? TRANSIT_MODE_ICON[stopMode(stopId)] : 'bus-stop'} size={22} color={theme.colors.primary} />
+          <Text style={[styles.stopName, { color: theme.colors.onSurface }]} numberOfLines={1}>{stopName}</Text>
+          <Text style={[styles.stopNo, { color: theme.colors.onSurfaceVariant }]}>#{stopId}</Text>
         </View>
 
-        {/* Yaklaşan Araçlar */}
+        {/* Geçen Hatlar */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.lineChips}>
+          {stopLines.map((lineNum) => (
+            <Chip
+              key={lineNum}
+              compact
+              onPress={() => nav.navigate('LineDetail', {
+                lineNumber: lineNum,
+                lineName: getRouteName(lineNum) ?? lineNum,
+              })}
+              icon={getLineMode(lineNum) === 'bus' ? undefined : TRANSIT_MODE_ICON[getLineMode(lineNum)]}
+              style={{ backgroundColor: theme.colors.primaryContainer }}
+              textStyle={[styles.lineChipText, { color: theme.colors.primary }]}
+            >
+              {getLineMode(lineNum) === 'ferry' ? getRouteName(lineNum) ?? lineNum : lineNum}
+            </Chip>
+          ))}
+        </ScrollView>
+
+        {!isRailStop && (
+          <SegmentedButtons
+            value={tab}
+            onValueChange={v => setTab(v as 'live' | 'schedule')}
+            buttons={[
+              { value: 'live', label: 'Yaklaşan Araçlar', icon: 'bus-clock' },
+              { value: 'schedule', label: 'En Yakın Kalkış', icon: 'calendar-clock' },
+            ]}
+          />
+        )}
+
         <Surface style={[styles.arrivalsCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
           <View style={styles.arrivalsHeader}>
-            <View style={styles.arrivalsTitle}>
-              <MaterialCommunityIcons name="bus-clock" size={20} color={theme.colors.primary} />
-              <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
-                {t('stop_arrivals')}
-              </Text>
-            </View>
-            <View style={[styles.countdown, { backgroundColor: theme.colors.surfaceVariant }]}>
-              <MaterialCommunityIcons name="refresh" size={12} color={theme.colors.onSurfaceVariant} />
-              <Text style={[styles.countdownText, { color: theme.colors.onSurfaceVariant }]}>
-                {countdown}s
-              </Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>
+              {tab === 'live' && !isRailStop ? t('stop_arrivals') : 'En yakın kalkışlar (tarife)'}
+            </Text>
+            <View style={styles.refreshRow}>
+              <Text style={[styles.countdownText, { color: theme.colors.onSurfaceVariant }]}>{countdown}s</Text>
+              {loading ? (
+                <ActivityIndicator size={20} style={styles.refreshSpinner} />
+              ) : (
+                <IconButton icon="refresh" mode="contained-tonal" size={20} onPress={handleRefresh} style={styles.refreshBtn} />
+              )}
             </View>
           </View>
 
           <Divider />
 
-          {arrivals.length === 0 ? (
-            <View style={styles.emptyArrivals}>
-              <MaterialCommunityIcons name="bus-alert" size={32} color={theme.colors.onSurfaceVariant} />
-              <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>
-                {t('stop_no_arrivals')}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.arrivalsList}>
-              {arrivals.map((a, i) => (
-                <View key={`${a.lineNumber}-${i}`} style={styles.arrivalRowWrap}>
-                  <View style={styles.arrivalRowFlex}>
-                    <ArrivalRow
-                      arrival={a}
-                      onPress={() => nav.navigate('LineDetail', {
-                        lineNumber: a.lineNumber,
-                        lineName: a.lineName,
-                      })}
-                    />
-                  </View>
-                  <Chip
-                    icon="bell-outline"
-                    compact
-                    onPress={async () => {
-                      try {
-                        const { status } = await Notifications.requestPermissionsAsync();
-                        if (status !== 'granted') { setSnackbar('Bildirim izni verilmedi.'); return; }
-                        const leadMins = Math.min(2, Math.max(0, a.minutesAway - 1));
-                        const secs = Math.max(30, (a.minutesAway - leadMins) * 60);
-                        await Notifications.scheduleNotificationAsync({
-                          content: {
-                            title: `${a.lineNumber} Hattı Geliyor`,
-                            body: leadMins > 0
-                              ? `${stopName} durağına ~${leadMins} dakika kaldı.`
-                              : `${stopName} durağına geliyor.`,
-                            sound: true,
-                          },
-                          trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: secs },
-                        });
-                        setSnackbar(`${a.lineNumber} için hatırlatıcı kuruldu.`);
-                      } catch (e) {
-                        console.warn('[StopDetail] hatırlatıcı kurulamadı:', e);
-                        setSnackbar('Hatırlatıcı kurulamadı.');
-                      }
-                    }}
-                    style={styles.bellChip}
-                  >
-                    Hatırlat
-                  </Chip>
+          {(() => {
+            const list = tab === 'live' && !isRailStop ? arrivals : schedule;
+            if (list.length === 0) {
+              return (
+                <View style={styles.emptyArrivals}>
+                  <MaterialCommunityIcons name="bus-alert" size={32} color={theme.colors.onSurfaceVariant} />
+                  <Text style={[styles.emptyText, { color: theme.colors.onSurfaceVariant }]}>
+                    {loading ? 'Yükleniyor…' : t('stop_no_arrivals')}
+                  </Text>
                 </View>
-              ))}
-            </View>
-          )}
+              );
+            }
+            return (
+              <View style={styles.arrivalsList}>
+                {list.map((a, i) => (
+                  <ArrivalRow
+                    key={`${a.lineNumber}-${i}`}
+                    arrival={a}
+                    onPress={() => nav.navigate('LineDetail', {
+                      lineNumber: a.lineNumber,
+                      lineName: getRouteName(a.lineNumber) ?? a.lineName,
+                    })}
+                    onRemind={() => scheduleReminder(a)}
+                  />
+                ))}
+              </View>
+            );
+          })()}
         </Surface>
 
         {/* Saatlik Yoğunluk */}
@@ -346,26 +352,20 @@ export function StopDetailScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   headerTitle: { fontSize: 18, fontWeight: '700' },
-  scroll: { padding: 20, gap: 16, paddingBottom: 40 },
-  heroCard: { borderRadius: 20, padding: 24, alignItems: 'center', gap: 12 },
-  heroIcon: { width: 72, height: 72, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
-  stopName: { fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  stopCoords: { fontSize: 12 },
-  favBtn: { borderRadius: 20, marginTop: 4 },
-  section: { gap: 10 },
+  scroll: { padding: 16, gap: 12, paddingBottom: 40 },
+  stopHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  stopName: { flex: 1, fontSize: 17, fontWeight: '700' },
+  stopNo: { fontSize: 13, fontWeight: '600' },
   sectionTitle: { fontSize: 16, fontWeight: '600' },
-  lineChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  lineChip: { height: 36 },
-  lineChipText: { fontWeight: '800', fontSize: 15 },
+  lineChips: { gap: 8 },
+  lineChipText: { fontWeight: '800', fontSize: 14 },
   arrivalsCard: { borderRadius: 16, overflow: 'hidden' },
-  arrivalsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16 },
-  arrivalsTitle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  countdown: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 20 },
+  arrivalsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingLeft: 16, paddingRight: 8, paddingVertical: 6 },
+  refreshRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  refreshBtn: { margin: 0 },
+  refreshSpinner: { margin: 10 },
   countdownText: { fontSize: 12, fontWeight: '600' },
   arrivalsList: { paddingHorizontal: 16 },
-  arrivalRowWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  arrivalRowFlex: { flex: 1 },
-  bellChip: { flexShrink: 0 },
   peakCard: { borderRadius: 16, padding: 16, gap: 12 },
   peakHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   peakBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 64 },

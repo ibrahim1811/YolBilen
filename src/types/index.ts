@@ -174,6 +174,7 @@ export interface StopArrival {
   minutesAway: number;
   direction: string;
   isLive?: boolean;
+  distanceM?: number;
 }
 
 export interface JourneyRecord {
@@ -241,6 +242,7 @@ export interface NotificationPrefs {
 export type TabParamList = {
   Home: undefined;
   Lines: undefined;
+  Stops: undefined;
   Community: undefined;
   Games: undefined;
   Profile: undefined;

@@ -155,7 +155,6 @@ export function CommunityScreen() {
         temperature: temp,
         crowd,
         timestamp: new Date(),
-        ...(selectedBusId ? { busId: selectedBusId } : {}),
         ...(plateInput.trim() ? { plateNumber: plateInput.trim() } : {}),
         ...(feedbackLat !== undefined ? { latitude: feedbackLat, longitude: feedbackLon } : {}),
       });
@@ -269,10 +268,9 @@ export function CommunityScreen() {
                         Hat {b.hatNumarasi}
                       </Text>
                       <Text style={[styles.busRowDetail, { color: theme.colors.onSurfaceVariant }]}>
-                        {b.hatAdi} · {b.kalanDurakSayisi} durak uzakta
+                        {b.hatAdi} · {b.kalanDk ? `${b.kalanDk} dk` : 'Durakta'}
                       </Text>
                     </View>
-                    <Text style={[styles.busRowId, { color: theme.colors.onSurfaceVariant }]}>#{b.otobusId}</Text>
                     {isSelected && <MaterialCommunityIcons name="check-circle" size={18} color={theme.colors.primary} />}
                   </View>
                 </TouchableRipple>
@@ -426,16 +424,21 @@ export function CommunityScreen() {
                       {Math.max(0, Math.round((a.expiresAt.getTime() - Date.now()) / 60000))} dk içinde sona erer
                     </Text>
                   </View>
-                  <TouchableOpacity onPress={async () => {
+                  <TouchableOpacity disabled={!!user && !!a.upvoters?.includes(user.uid)} onPress={async () => {
                     try {
                       await upvoteAlert(a.id!);
                       await loadRecent();
-                    } catch {
+                    } catch (e) {
+                      console.warn('[Community] oylama başarısız:', e);
                       setSnackbar('Oylama başarısız oldu.');
                     }
                   }}>
                     <View style={styles.upvoteBtn}>
-                      <MaterialCommunityIcons name="thumb-up-outline" size={16} color={theme.colors.primary} />
+                      <MaterialCommunityIcons
+                        name={user && a.upvoters?.includes(user.uid) ? 'thumb-up' : 'thumb-up-outline'}
+                        size={16}
+                        color={theme.colors.primary}
+                      />
                       <Text style={[styles.upvoteCount, { color: theme.colors.primary }]}>{a.upvotes}</Text>
                     </View>
                   </TouchableOpacity>

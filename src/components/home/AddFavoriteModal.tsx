@@ -62,6 +62,7 @@ export function AddFavoriteModal({ visible, onDismiss, onAdd, disabledTypes = []
       <Modal
         visible={visible}
         onDismiss={handleClose}
+        style={styles.modalWrap}
         contentContainerStyle={[styles.modal, { backgroundColor: theme.colors.surface }]}
       >
         {step === 'type' ? (
@@ -165,8 +166,10 @@ export function AddFavoriteModal({ visible, onDismiss, onAdd, disabledTypes = []
 }
 
 const styles = StyleSheet.create({
+  modalWrap: { justifyContent: 'flex-start' },
   modal: {
-    margin: 20,
+    marginHorizontal: 16,
+    marginTop: 56,
     borderRadius: 20,
     padding: 24,
     maxHeight: '80%',

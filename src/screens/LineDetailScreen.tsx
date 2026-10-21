@@ -8,19 +8,18 @@ import { ComfortScoreCard } from '../components/lines/ComfortScoreCard';
 import { getLineComfortScore } from '../services/firebase/lineStats';
 import { getLineFeedbacks } from '../services/firebase/firestore';
 import { getLineScheduleFromFirestore, getScheduleForDay } from '../services/firebase/scheduleService';
-import { getOrderedStopsForDir } from '../data/gtfsData';
+import { getOrderedStopsForDir, getLineColor, getLineMode, lineTitle, TRANSIT_MODE_ICON, TRANSIT_MODE_LABEL } from '../data/gtfsData';
 import { RecentFeedbackCard } from '../components/community/RecentFeedbackCard';
 import { LineRouteMapModal } from '../components/common/LineRouteMapModal';
 import { useFavorites } from '../hooks/useFavorites';
 import { useAppStore } from '../store/useAppStore';
+import { LastBusAlertModal } from '../components/lines/LastBusAlertModal';
+import { ScheduleBoard, type ServiceDay } from '../components/lines/ScheduleBoard';
+import { getLastBusAlerts } from '../services/notifications/lastBusService';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList, ComfortScore, Feedback } from '../types';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'LineDetail'>;
-
-function minsToHHMM(mins: number): string {
-  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
-}
 
 function isRingRoute(name: string) {
   const lower = name.toLowerCase();
@@ -39,14 +38,19 @@ export function LineDetailScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(true);
 
   const parts = lineName.split(' - ');
-  const fromStop = parts[0] ?? lineName;
-  const toStop = parts[1] ?? '';
+  const seq0 = getOrderedStopsForDir(lineNumber, 0);
+  const fromStop = seq0[0]?.name ?? parts[0] ?? lineName;
+  const toStop = seq0[seq0.length - 1]?.name ?? parts[1] ?? '';
   const isRing = isRingRoute(lineName);
+  const lineMode = getLineMode(lineNumber);
 
-  const [serviceType, setServiceType] = useState<'weekday' | 'saturday' | 'sunday'>(() => {
-    const day = new Date().getDay();
+  const todayServiceType: ServiceDay = (() => {
+    const now = new Date();
+    // 03:00'ten önce bir önceki günün tarifesi geçerli
+    const day = (now.getHours() < 3 ? new Date(now.getTime() - 86_400_000) : now).getDay();
     return day === 0 ? 'sunday' : day === 6 ? 'saturday' : 'weekday';
-  });
+  })();
+  const [serviceType, setServiceType] = useState<ServiceDay>(todayServiceType);
   const [rawSchedule, setRawSchedule] = useState<import('../services/firebase/scheduleService').LineSchedule>({});
   const [scheduleLoading, setScheduleLoading] = useState(true);
 
@@ -95,12 +99,32 @@ export function LineDetailScreen({ navigation, route }: Props) {
 
   const isFav = isLineFavorited(lineNumber);
   const [showRouteMap, setShowRouteMap] = React.useState(false);
+  const [showLastBus, setShowLastBus] = React.useState(false);
+  const [hasLastBusAlert, setHasLastBusAlert] = React.useState(false);
+  const refreshLastBusAlert = React.useCallback(() => {
+    getLastBusAlerts()
+      .then(all => setHasLastBusAlert(all.some(a => a.lineNumber === lineNumber)))
+      .catch(e => console.warn('[LineDetail] son sefer uyarıları okunamadı:', e));
+  }, [lineNumber]);
+  useEffect(refreshLastBusAlert, [refreshLastBusAlert]);
+  const dir0End = dir0Stops[dir0Stops.length - 1]?.name;
+  const dir1End = dir1Stops[dir1Stops.length - 1]?.name;
+  const dirLabels: [string, string] = isRing || !dir0End || !dir1End
+    ? ['Gidiş', 'Dönüş']
+    : [`${dir0End} yönü`, `${dir1End} yönü`];
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <Appbar.Header style={{ backgroundColor: theme.colors.background }} elevated={false}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
-        <Appbar.Content title={`Hat ${lineNumber}`} titleStyle={styles.headerTitle} />
+        <Appbar.Content title={lineTitle(lineNumber)} titleStyle={styles.headerTitle} />
+        <IconButton
+          icon={hasLastBusAlert ? 'bell-ring' : 'bell-outline'}
+          iconColor={hasLastBusAlert ? theme.colors.primary : theme.colors.onSurfaceVariant}
+          size={24}
+          onPress={() => setShowLastBus(true)}
+          accessibilityLabel="Son sefer uyarısı"
+        />
         {!user?.isGuest && (
           <IconButton
             icon={isFav ? 'star' : 'star-outline'}
@@ -113,11 +137,11 @@ export function LineDetailScreen({ navigation, route }: Props) {
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Hero */}
-        <Surface style={[styles.heroCard, { backgroundColor: theme.colors.primary }]} elevation={0}>
+        <Surface style={[styles.heroCard, { backgroundColor: getLineColor(lineNumber) ?? theme.colors.primary }]} elevation={0}>
           <View style={[styles.heroBadge, { backgroundColor: 'rgba(255,255,255,0.2)' }]}>
-            <MaterialCommunityIcons name="bus" size={32} color="#FFF" />
+            <MaterialCommunityIcons name={TRANSIT_MODE_ICON[lineMode]} size={32} color="#FFF" />
           </View>
-          <Text style={styles.heroNumber}>{lineNumber}</Text>
+          <Text style={styles.heroNumber}>{lineMode === 'ferry' ? TRANSIT_MODE_LABEL.ferry : lineNumber}</Text>
           <Text style={styles.heroName}>{lineName}</Text>
         </Surface>
 
@@ -154,82 +178,28 @@ export function LineDetailScreen({ navigation, route }: Props) {
               </View>
             )}
           </View>
-
-          {/* Gün seçici */}
-          <View style={styles.dayRow}>
-            {(['weekday', 'saturday', 'sunday'] as const).map((s) => (
-              <TouchableOpacity
-                key={s}
-                onPress={() => setServiceType(s)}
-                style={[styles.dayBtn, serviceType === s && { backgroundColor: theme.colors.primaryContainer }]}
-              >
-                <Text style={[styles.dayBtnText, { color: serviceType === s ? theme.colors.primary : theme.colors.onSurfaceVariant }]}>
-                  {s === 'weekday' ? 'Hafta İçi' : s === 'saturday' ? 'Cumartesi' : 'Pazar'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
           {scheduleLoading ? (
-            <Text style={[styles.scheduleNote, { color: theme.colors.onSurfaceVariant }]}>
-              Saatler yükleniyor...
-            </Text>
+            <Text style={[styles.scheduleNote, { color: theme.colors.onSurfaceVariant }]}>Saatler yükleniyor...</Text>
           ) : Object.keys(rawSchedule).length === 0 ? (
             <Text style={[styles.scheduleNote, { color: theme.colors.onSurfaceVariant }]}>
-              Bu hat için sefer verisi sisteme henüz eklenmemiş.{'\n'}ESHOT'un resmi sitesinden kontrol edebilirsiniz.
+              Bu hat için sefer verisi sisteme henüz eklenmemiş.{'\n'}
+              {lineMode === 'bus' ? "ESHOT'un resmi sitesinden kontrol edebilirsiniz." : 'İşletmecinin resmi sitesinden kontrol edebilirsiniz.'}
             </Text>
-          ) : schedule.dir0.length === 0 && schedule.dir1.length === 0 ? (
-            <Text style={[styles.scheduleNote, { color: theme.colors.onSurfaceVariant }]}>
-              {hasOnlyWeekday
-                ? 'Bu hat yalnızca hafta içi sefer yapıyor. Hafta İçi sekmesine geçin.'
-                : isRing
-                ? 'Ring hat — hafta içi saatler geçerlidir.'
-                : 'Bu gün için sefer verisi yok.'}
-            </Text>
-          ) : (() => {
-            const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-            const nextDir0 = schedule.dir0.find(t => t >= nowMins) ?? schedule.dir0[0];
-            const nextDir1 = schedule.dir1.find(t => t >= nowMins) ?? schedule.dir1[0];
-            return (
-              <>
-                {schedule.dir0.length > 0 && (
-                  <>
-                    <Text style={[styles.dirLabel, { color: theme.colors.onSurface }]}>
-                      {fromStop} → {toStop || fromStop}
-                    </Text>
-                    <View style={styles.timeGrid}>
-                      {schedule.dir0.map(t => {
-                        const isNext = t === nextDir0;
-                        return (
-                          <View key={t} style={[styles.timeBadge, { backgroundColor: isNext ? theme.colors.primary : theme.colors.primaryContainer }]}>
-                            <Text style={[styles.timeText, { color: isNext ? '#FFF' : theme.colors.primary, fontWeight: isNext ? '800' : '400' }]}>{minsToHHMM(t)}</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </>
-                )}
-                {schedule.dir1.length > 0 && (
-                  <>
-                    <Text style={[styles.dirLabel, { color: theme.colors.onSurface, marginTop: 12 }]}>
-                      {toStop || fromStop} → {fromStop}
-                    </Text>
-                    <View style={styles.timeGrid}>
-                      {schedule.dir1.map(t => {
-                        const isNext = t === nextDir1;
-                        return (
-                          <View key={t} style={[styles.timeBadge, { backgroundColor: isNext ? theme.colors.secondary : theme.colors.secondaryContainer }]}>
-                            <Text style={[styles.timeText, { color: isNext ? '#FFF' : theme.colors.secondary, fontWeight: isNext ? '800' : '400' }]}>{minsToHHMM(t)}</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                  </>
-                )}
-              </>
-            );
-          })()}
+          ) : (
+            <ScheduleBoard
+              times={dir === 0 ? schedule.dir0 : schedule.dir1}
+              dir={dir}
+              onDirChange={setDir}
+              dirLabels={[dir0Stops[dir0Stops.length - 1]?.name ?? toStop, dir1Stops[dir1Stops.length - 1]?.name ?? fromStop]}
+              showDirToggle={!isRing && schedule.dir1.length + (rawSchedule.weekday?.donus.length ?? 0) > 0}
+              day={serviceType}
+              onDayChange={setServiceType}
+              isToday={serviceType === todayServiceType}
+              emptyText={hasOnlyWeekday ? 'Bu hat yalnızca hafta içi sefer yapıyor.' : undefined}
+            />
+          )}
         </Surface>
+
 
         {/* Durak Listesi */}
         {lineStops.length > 0 && (
@@ -341,6 +311,15 @@ export function LineDetailScreen({ navigation, route }: Props) {
           onDismiss={() => setShowRouteMap(false)}
         />
       )}
+      <LastBusAlertModal
+        visible={showLastBus}
+        onDismiss={() => setShowLastBus(false)}
+        lineNumber={lineNumber}
+        lineName={lineName}
+        dirLabels={dirLabels}
+        schedule={rawSchedule}
+        onChange={refreshLastBusAlert}
+      />
     </SafeAreaView>
   );
 }
@@ -375,13 +354,6 @@ const styles = StyleSheet.create({
   ringBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12 },
   ringText: { fontSize: 11, fontWeight: '600' },
   scheduleNote: { fontSize: 12 },
-  dayRow: { flexDirection: 'row', gap: 8 },
-  dayBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  dayBtnText: { fontSize: 12, fontWeight: '600' },
-  dirLabel: { fontSize: 13, fontWeight: '600', marginBottom: 4 },
-  timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  timeBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
-  timeText: { fontSize: 13, fontWeight: '600' },
   noScoreCard: { borderRadius: 16, padding: 32, alignItems: 'center', gap: 12 },
   noScoreText: { fontSize: 14, textAlign: 'center', lineHeight: 22 },
   section: { gap: 12 },

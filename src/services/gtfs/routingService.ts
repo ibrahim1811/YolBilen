@@ -7,7 +7,16 @@ import {
   clearLinesNearCache,
   isRingRoute,
   getStopRouteDirs,
+  getLineMode,
+  getRailArrivalMins,
+  getRailRideMins,
+  getRouteStopSeqs,
+  getBusRideMins,
+  getBusOffsetAt,
 } from '../../data/gtfsData';
+import { getStopIndex } from '../../data/gtfsData';
+import { raptorSearch, patternStopsBetween, type RaptorJourney } from './raptor';
+import type { Transfer } from '../../types';
 import { getCachedSunAnalysis } from '../sun/sunCache';
 import { getScheduledArrivalAtStop, NO_SERVICE_MINS } from '../firebase/scheduleService';
 import { getApproachingBuses, resolveIztekStopId, estimateArrivalMins, isWaitingAtTerminal } from '../iztek/iztekService';
@@ -18,7 +27,8 @@ const WALK_NORMAL_M = 700;
 const withTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
   Promise.race([p, new Promise<T>(r => setTimeout(() => r(fallback), ms))]);
 const WALK_EXTENDED_M = 1200;
-const TRANSFER_WALK_M = 600;
+const FUTURE_SEARCH_THRESHOLD_MS = 10 * 60_000;
+const FAR_DEPARTURE_MINS = 120;
 
 function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
   const R = 6371;
@@ -91,13 +101,20 @@ function buildSteps(
   const toBoard = walkCalc(origin, board);
   const fromAlight = walkCalc(alight, destination);
   const midStops = intermediateStops(lineNum, dir, board.id, alight.id);
-  const { distanceMeters: transitDist, durationMins: transitDur } = calcTransitDetails(board, alight, midStops);
+  const mode = getLineMode(lineNum);
+  const { distanceMeters: transitDist, durationMins: busDur } = calcTransitDetails(board, alight, midStops);
+  const transitDur = (mode !== 'bus'
+    ? getRailRideMins(lineNum, dir, board.id, alight.id)
+    : getBusRideMins(lineNum, dir, board.id, alight.id)) || busDur;
   let departureTime: string | undefined;
+  let departureMins: number | undefined;
   if (nextArrivalMins < NO_SERVICE_MINS) {
     const now = new Date();
-    const depMins = now.getHours() * 60 + now.getMinutes() + nextArrivalMins;
-    departureTime = `${String(Math.floor(depMins / 60) % 24).padStart(2, '0')}:${String(depMins % 60).padStart(2, '0')}`;
+    departureMins = now.getHours() * 60 + now.getMinutes() + nextArrivalMins;
+    departureTime = `${String(Math.floor(departureMins / 60) % 24).padStart(2, '0')}:${String(departureMins % 60).padStart(2, '0')}`;
   }
+  const dirStops = getOrderedStopsForDir(lineNum, dir);
+  const headsign = isRingRoute(lineNum) ? undefined : dirStops[dirStops.length - 1]?.name;
   return [
     { type: 'walk', durationMins: toBoard.mins, toStopName: board.name, distanceMeters: toBoard.meters },
     {
@@ -105,10 +122,15 @@ function buildSteps(
       durationMins: transitDur,
       distanceMeters: transitDist,
       lineNumber: lineNum,
+      mode,
       boardStop: { name: board.name, latitude: board.latitude, longitude: board.longitude },
       alightStop: { name: alight.name, latitude: alight.latitude, longitude: alight.longitude },
       intermediateStops: midStops,
       departureTime,
+      departureMins,
+      headsign,
+      dir,
+      boardStopId: board.id,
     },
     { type: 'walk', durationMins: fromAlight.mins, toStopName: destination.name, distanceMeters: fromAlight.meters },
   ];
@@ -135,6 +157,8 @@ interface ArrivalEstimate {
 }
 
 function rideMinsFromTerminal(lineNum: string, dir: 0 | 1, stopId: string): number {
+  const planned = getBusOffsetAt(lineNum, dir, stopId);
+  if (planned !== null) return planned;
   const ordered = getOrderedStopsForDir(lineNum, dir);
   const idx = ordered.findIndex(s => s.id === stopId);
   if (idx <= 0) return 0;
@@ -145,8 +169,11 @@ function rideMinsFromTerminal(lineNum: string, dir: 0 | 1, stopId: string): numb
 // Durağın bulunduğu yön(ler)e göre tarifeden en yakın geliş; bugün sefer yoksa null.
 export function getScheduledArrivalForStopId(lineNum: string, stopId: string, afterMins = 0): number | null {
   const dirs = (getStopRouteDirs()[stopId] ?? []).filter(d => d.lineNum === lineNum).map(d => d.dir);
+  const isRail = getLineMode(lineNum) !== 'bus';
   const results = dirs
-    .map(dir => getScheduledArrivalAtStop(lineNum, dir, rideMinsFromTerminal(lineNum, dir, stopId), afterMins))
+    .map(dir => isRail
+      ? getRailArrivalMins(lineNum, dir, stopId, afterMins)
+      : getScheduledArrivalAtStop(lineNum, dir, rideMinsFromTerminal(lineNum, dir, stopId), afterMins))
     .filter((m): m is number => m !== null);
   return results.length > 0 ? Math.min(...results) : null;
 }
@@ -158,6 +185,10 @@ async function nextArrival(
   board: { id: string; lat: number; lon: number },
   afterMins: number
 ): Promise<ArrivalEstimate> {
+  // İZTEK canlı verisi yalnızca ESHOT otobüsleri için; raylı sistem ve vapurda tarife kullanılır.
+  if (getLineMode(lineNum) !== 'bus') {
+    return { mins: getRailArrivalMins(lineNum, dir, board.id, afterMins) ?? NO_SERVICE_MINS, isLive: false };
+  }
   const iztekId = resolveIztekStopId(board.id, board.lat, board.lon);
   if (iztekId) {
     try {
@@ -174,6 +205,10 @@ async function nextArrival(
   }
   const scheduled = getScheduledArrivalAtStop(lineNum, dir, rideMinsFromTerminal(lineNum, dir, board.id), afterMins);
   return { mins: scheduled ?? NO_SERVICE_MINS, isLive: false };
+}
+
+function lineHasSchedule(lineNum: string): boolean {
+  return getLineMode(lineNum) !== 'bus' || hasSchedule(lineNum);
 }
 
 // getBusCard plate-based — hat numarasından plaka bilinmez; saat bazlı heuristik kullan
@@ -232,10 +267,15 @@ function calcConfidenceDetail(
 export async function findRoutes(
   origin: Location,
   destination: Location,
-  options: { allowLongWalk?: boolean; filterMode?: RouteFilterMode } = {}
+  options: { allowLongWalk?: boolean; filterMode?: RouteFilterMode; departAt?: Date } = {}
 ): Promise<Route[]> {
   const maxWalkM = options.allowLongWalk ? WALK_EXTENDED_M : WALK_NORMAL_M;
   const maxWalkKm = maxWalkM / 1000;
+
+  // İleri bir saat için canlı veri anlamsız: yalnızca tarife tabanlı arama
+  if (options.departAt && options.departAt.getTime() - Date.now() > FUTURE_SEARCH_THRESHOLD_MS) {
+    return findMultiLegRoutes(origin, destination, Math.max(maxWalkM, 1000), options.departAt);
+  }
 
   const candidateLines = getLinesNearOrigin(
     { lat: origin.latitude, lon: origin.longitude },
@@ -252,7 +292,7 @@ export async function findRoutes(
     ),
   })).filter(x => x.name && x.pair);
 
-  const valid = pairs
+  const ranked = pairs
     .map(x => ({
       ...x,
       boardWalkM: haversineKm(
@@ -265,8 +305,12 @@ export async function findRoutes(
       ) * 1000,
     }))
     .filter(x => x.boardWalkM <= maxWalkM && x.alightWalkM <= maxWalkM)
-    .sort((a, b) => (a.boardWalkM + a.alightWalkM) - (b.boardWalkM + b.alightWalkM))
-    .slice(0, 5);
+    .sort((a, b) => (a.boardWalkM + a.alightWalkM) - (b.boardWalkM + b.alightWalkM));
+  // Otobüs durakları çok daha sık olduğu için raylı/vapur adayları ayrı kontenjanla eklenir, yoksa hep elenirler.
+  const valid = [
+    ...ranked.filter(x => getLineMode(x.lineNum) === 'bus').slice(0, 5),
+    ...ranked.filter(x => getLineMode(x.lineNum) !== 'bus').slice(0, 3),
+  ];
 
   const crowdLevels = valid.map(() => getCrowdLevel());
   const arrivals = await Promise.all(valid.map(({ pair, lineNum }) =>
@@ -293,12 +337,13 @@ export async function findRoutes(
     };
 
     const steps = buildSteps(origin, destination, lineNum, pair!.dir, boardStop, alightStop, nextArrival);
+    for (const s of steps) if (s.type === 'transit') s.isLive = hasLiveData;
     const sunAnalysis = sunAnalysisForSteps(
       steps, origin, destination,
       `${lineNum}_${pair!.dir}_${boardStop.id}_${alightStop.id}`,
       nextArrival >= NO_SERVICE_MINS ? 0 : nextArrival
     );
-    const scheduleOk = hasSchedule(lineNum);
+    const scheduleOk = lineHasSchedule(lineNum);
     const boardWalkM = steps[0]?.distanceMeters ?? 0;
     const alightWalkM = steps[steps.length - 1]?.distanceMeters ?? 0;
     const confidenceDetail = calcConfidenceDetail(hasLiveData, scheduleOk, boardWalkM, alightWalkM);
@@ -307,6 +352,7 @@ export async function findRoutes(
       id: `direct-${lineNum}-${pair!.dir}`,
       lineNumber: lineNum,
       lineName: name!,
+      mode: getLineMode(lineNum),
       estimatedDuration: steps.reduce((s, st) => s + st.durationMins, 0),
       transfers: [],
       nextArrival,
@@ -321,174 +367,312 @@ export async function findRoutes(
     });
   });
 
-  if (results.length < 3) {
-    try {
-      const transfers = await findTransferRoutes(origin, destination, maxWalkM);
-      for (const tr of transfers) {
-        if (!results.find(r => r.id === tr.id)) results.push(tr);
-      }
-    } catch (e) {
-      console.warn('[findRoutes] aktarmalı rota aranamadı:', e);
+  try {
+    const directLines = new Set(results.map(r => r.lineNumber));
+    const multi = findMultiLegRoutes(origin, destination, Math.max(maxWalkM, 1000))
+      // Tek araçlı sonuç zaten canlı veriyle direkt rotalarda varsa tekrar ekleme
+      .filter(m => !(m.transfers.length === 0 && directLines.has(m.lineNumber)));
+    const refined = await Promise.all(multi.map(m => (m.isNextDay ? m : retimeWithLive(m))));
+    // Yeniden zamanlamada iki seçenek aynı sefere düşebilir
+    const seenTimed = new Set<string>();
+    for (const r of refined) {
+      const sig = (r.steps ?? []).filter(s => s.type === 'transit').map(s => `${s.lineNumber}@${s.departureMins}`).join('-');
+      if (seenTimed.has(sig)) continue;
+      seenTimed.add(sig);
+      results.push(r);
     }
+  } catch (e) {
+    console.warn('[findRoutes] çok aktarmalı rota aranamadı:', e);
   }
+
+  const walk = walkOnlyRoute(origin, destination);
+  if (walk) results.push(walk);
 
   clearLinesNearCache();
-  return results;
+  // Bugün seferi kalmamış direkt hatlar, başka seçenek varsa listeyi kirletmesin
+  const withService = results.filter(r => r.isWalkOnly || r.nextArrival < NO_SERVICE_MINS);
+  const final = withService.length > 0 ? withService : results;
+  // Bu akşam için gerçek bir seçenek varsa ertesi sabahın seçenekleri gösterilmez
+  const hasToday = final.some(r => !r.isWalkOnly && !r.isNextDay && r.nextArrival < NO_SERVICE_MINS);
+  const sameDay = hasToday ? final.filter(r => !r.isNextDay) : final;
+  // Yakında kalkan bir seçenek varsa saatler sonraki seferler (ör. gece hattı) gösterilmez
+  const soon = sameDay.filter(r => r.isWalkOnly || r.nextArrival <= FAR_DEPARTURE_MINS);
+  return soon.some(r => !r.isWalkOnly) ? soon : sameDay;
 }
 
-async function findTransferRoutes(origin: Location, destination: Location, maxWalkM: number): Promise<Route[]> {
-  const results: Route[] = [];
-  const line1Candidates = getLinesNearOrigin(
-    { lat: origin.latitude, lon: origin.longitude },
-    maxWalkM / 1000
-  ).slice(0, 10); // en fazla 10 hat dene — daha fazlası azalan kazanım
+function clockLabel(mins: number): string {
+  const m = ((mins % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
 
-  for (const line1 of line1Candidates) {
-    if (results.length >= 3) break;
-    const name1 = getRouteName(line1);
-    if (!name1) continue;
+function journeyToRoute(j: RaptorJourney, origin: Location, destination: Location, nowMins: number): Route | null {
+  const stopIdx = getStopIndex();
+  const steps: RouteStep[] = [];
+  const rides = j.legs.filter(l => l.type === 'ride');
+  if (rides.length === 0) return null;
 
-    // Her iki yönü dene — yanlış yön seçimini önler
-    for (const dir1 of [0, 1] as (0 | 1)[]) {
-    if (results.length >= 3) break;
-
-    const line1Stops = getOrderedStopsForDir(line1, dir1);
-    if (line1Stops.length < 2) continue;
-
-    // origin'e en yakın durak
-    let boardIdx = 0;
-    let boardDist = haversineKm({ lat: origin.latitude, lon: origin.longitude }, { lat: line1Stops[0].lat, lon: line1Stops[0].lon });
-    for (let i = 1; i < line1Stops.length; i++) {
-      const d = haversineKm({ lat: origin.latitude, lon: origin.longitude }, { lat: line1Stops[i].lat, lon: line1Stops[i].lon });
-      if (d < boardDist) { boardDist = d; boardIdx = i; }
-    }
-    if (boardDist * 1000 > maxWalkM) continue;
-
-    const board1Stop = line1Stops[boardIdx];
-
-    const midSearchEnd = Math.min(boardIdx + 16, line1Stops.length);
-    for (let midIdx = boardIdx + 2; midIdx < midSearchEnd; midIdx++) {
-      if (results.length >= 3) break;
-      const midStop = line1Stops[midIdx];
-
-      // Destination'a doğru ilerliyoruz mu kontrol et
-      const distToDestFromMid = haversineKm(
-        { lat: midStop.lat, lon: midStop.lon },
-        { lat: destination.latitude, lon: destination.longitude }
-      );
-      const distToDestFromBoard = haversineKm(
-        { lat: board1Stop.lat, lon: board1Stop.lon },
-        { lat: destination.latitude, lon: destination.longitude }
-      );
-      if (distToDestFromMid >= distToDestFromBoard) continue;
-
-      const line2Candidates = getLinesNearOrigin(
-        { lat: midStop.lat, lon: midStop.lon },
-        TRANSFER_WALK_M / 1000
-      );
-
-      for (const line2 of line2Candidates) {
-        if (line2 === line1) continue; // BUG 2 fix: continue, break değil
-        if (results.length >= 3) break;
-        const name2 = getRouteName(line2);
-        if (!name2) continue;
-
-        const pair2 = findBoardAlightPair(
-          line2,
-          { lat: midStop.lat, lon: midStop.lon },
-          { lat: destination.latitude, lon: destination.longitude }
-        );
-        if (!pair2) continue;
-
-        const alightWalk = haversineKm(
-          { lat: destination.latitude, lon: destination.longitude },
-          { lat: pair2.alight.lat, lon: pair2.alight.lon }
-        );
-        if (alightWalk * 1000 > maxWalkM) continue;
-
-        const board1: RouteStop = { id: board1Stop.id, name: board1Stop.name, latitude: board1Stop.lat, longitude: board1Stop.lon };
-        const alight1: RouteStop = { id: midStop.id, name: midStop.name, latitude: midStop.lat, longitude: midStop.lon };
-        const board2: RouteStop = { id: pair2.board.id, name: pair2.board.name, latitude: pair2.board.lat, longitude: pair2.board.lon };
-        const alight2: RouteStop = { id: pair2.alight.id, name: pair2.alight.name, latitude: pair2.alight.lat, longitude: pair2.alight.lon };
-
-        const transferWalkKm = haversineKm(
-          { lat: alight1.latitude, lon: alight1.longitude },
-          { lat: board2.latitude, lon: board2.longitude }
-        );
-        if (transferWalkKm * 1000 > TRANSFER_WALK_M) continue;
-        const transferWalkMins = Math.max(1, Math.round(transferWalkKm * 12));
-
-        const crowd1 = getCrowdLevel();
-        const crowd2 = getCrowdLevel();
-        const arr1 = await nextArrival(line1, dir1, board1Stop, walkCalc(origin, board1).mins);
-        if (arr1.mins >= NO_SERVICE_MINS) continue;
-
-        // Redundant 0-mesafe yürüyüş adımlarını çıkar
-        const steps1Raw = buildSteps(origin, { name: alight1.name, latitude: alight1.latitude, longitude: alight1.longitude }, line1, dir1, board1, alight1, arr1.mins);
-        // İkinci otobüs, aktarma durağına varıştan sonra gelen ilk sefer olmalı
-        const arr2 = await nextArrival(line2, pair2.dir, pair2.board, arr1.mins + steps1Raw[1].durationMins + transferWalkMins);
-        if (arr2.mins >= NO_SERVICE_MINS) continue;
-        const steps2Raw = buildSteps({ name: board2.name, latitude: board2.latitude, longitude: board2.longitude }, destination, line2, pair2.dir, board2, alight2, arr2.mins);
-        const steps1 = steps1Raw.slice(0, -1); // son walk (alight1→alight1) kaldırılır
-        const steps2 = steps2Raw.slice(1);     // ilk walk (board2→board2) kaldırılır
-
-        const transferWalkStep: RouteStep = {
-          type: 'walk',
-          durationMins: transferWalkMins,
-          toStopName: board2.name,
-          distanceMeters: Math.round(transferWalkKm * 1000),
-        };
-
-        const allSteps: RouteStep[] = [...steps1, transferWalkStep, ...steps2];
-        const totalDuration = allSteps.reduce((s, st) => s + st.durationMins, 0);
-
-        const crowdLevel: CrowdLevel = crowd1 === 'very_high' || crowd2 === 'very_high' ? 'very_high'
-          : crowd1 === 'high' || crowd2 === 'high' ? 'high'
-          : crowd1 === 'medium' || crowd2 === 'medium' ? 'medium' : 'low';
-
-        const sunAnalysis = sunAnalysisForSteps(
-          allSteps, origin, destination,
-          `${line1}_${dir1}_${board1.id}_${alight1.id}_${line2}_${pair2.dir}_${board2.id}_${alight2.id}`,
-          arr1.mins
-        );
-        const scheduleOk1 = hasSchedule(line1);
-        const scheduleOk2 = hasSchedule(line2);
-        const tBoardWalkM = allSteps[0]?.distanceMeters ?? 0;
-        const tAlightWalkM = allSteps[allSteps.length - 1]?.distanceMeters ?? 0;
-        const confidenceDetail = calcConfidenceDetail(arr1.isLive, scheduleOk1 && scheduleOk2, tBoardWalkM, tAlightWalkM);
-
-        results.push({
-          id: `transfer-${line1}-${line2}-${dir1}-${midIdx}`,
-          lineNumber: line1,
-          lineName: `${name1} → ${name2}`,
-          estimatedDuration: totalDuration,
-          transfers: [{
-            lineNumber: line2,
-            lineName: name2,
-            boardStop: board2,
-            alightStop: alight2,
-            walkMins: transferWalkMins,
-          }],
-          nextArrival: arr1.mins,
-          crowdLevel,
-          sunAnalysis,
-          boardingStop: board1,
-          alightingStop: alight2,
-          steps: allSteps,
-          confidence: confidenceDetail.score,
-          confidenceDetail,
-          hasIncompleteData: !scheduleOk1 || !scheduleOk2,
-        });
-        break;
+  for (let i = 0; i < j.legs.length; i++) {
+    const leg = j.legs[i];
+    if (leg.type === 'walk') {
+      const to = leg.toStopId ? stopIdx.get(leg.toStopId) : undefined;
+      const mins = leg.arriveMins - leg.departMins;
+      if (mins <= 0 && !to) continue;
+      const prevStep = steps[steps.length - 1];
+      if (prevStep?.type === 'walk') {
+        prevStep.durationMins += Math.max(0, mins);
+        prevStep.distanceMeters = (prevStep.distanceMeters ?? 0) + Math.round(leg.meters ?? 0);
+        prevStep.toStopName = to?.name ?? destination.name;
+        continue;
       }
+      steps.push({
+        type: 'walk',
+        durationMins: Math.max(0, mins),
+        toStopName: to?.name ?? destination.name,
+        distanceMeters: Math.round(leg.meters ?? 0),
+      });
+      continue;
     }
-    } // dir1 loop
+    const stops = patternStopsBetween(leg.lineNum!, leg.dir!, leg.boardIdx!, leg.alightIdx!);
+    const board = stops[0];
+    const alight = stops[stops.length - 1];
+    const mid = stops.slice(1, -1).map(s => ({ name: s.name, latitude: s.lat, longitude: s.lon }));
+    const dirStops = getOrderedStopsForDir(leg.lineNum!, leg.dir!);
+    steps.push({
+      type: 'transit',
+      durationMins: leg.arriveMins - leg.departMins,
+      distanceMeters: calcTransitDetails(
+        { latitude: board.lat, longitude: board.lon },
+        { latitude: alight.lat, longitude: alight.lon },
+        mid
+      ).distanceMeters,
+      lineNumber: leg.lineNum,
+      mode: getLineMode(leg.lineNum!),
+      boardStop: { name: board.name, latitude: board.lat, longitude: board.lon },
+      alightStop: { name: alight.name, latitude: alight.lat, longitude: alight.lon },
+      intermediateStops: mid,
+      departureMins: leg.departMins,
+      departureTime: clockLabel(leg.departMins),
+      headsign: isRingRoute(leg.lineNum!) ? undefined : dirStops[dirStops.length - 1]?.name,
+      dir: leg.dir,
+      boardStopId: board.id,
+    });
   }
-  return results;
+
+  const first = rides[0];
+  const firstBoard = stopIdx.get(first.fromStopId!)!;
+  const lastAlight = stopIdx.get(rides[rides.length - 1].toStopId!)!;
+  const walkToBoard = steps[0]?.type === 'walk' ? steps[0].durationMins : 0;
+  const names = rides.map(r => getRouteName(r.lineNum!) ?? r.lineNum!);
+  const transfers: Transfer[] = rides.slice(1).map((r, i) => {
+    const b = stopIdx.get(r.fromStopId!)!;
+    const a = stopIdx.get(r.toStopId!)!;
+    const walkLeg = j.legs[j.legs.indexOf(r) - 1];
+    return {
+      lineNumber: r.lineNum!,
+      lineName: names[i + 1],
+      boardStop: { id: b.id, name: b.name, latitude: b.lat, longitude: b.lon },
+      alightStop: { id: a.id, name: a.name, latitude: a.lat, longitude: a.lon },
+      walkMins: walkLeg?.type === 'walk' ? walkLeg.arriveMins - walkLeg.departMins : 0,
+    };
+  });
+
+  const allScheduled = rides.every(r => lineHasSchedule(r.lineNum!));
+  const confidenceDetail = calcConfidenceDetail(
+    false,
+    allScheduled,
+    steps[0]?.type === 'walk' ? steps[0].distanceMeters ?? 0 : 0,
+    steps[steps.length - 1]?.type === 'walk' ? steps[steps.length - 1].distanceMeters ?? 0 : 0
+  );
+
+  return {
+    id: `multi-${rides.map(r => `${r.lineNum}.${r.dir}`).join('-')}-${first.departMins}`,
+    lineNumber: first.lineNum!,
+    lineName: names.join(' → '),
+    mode: getLineMode(first.lineNum!),
+    estimatedDuration: j.arriveMins - first.departMins + walkToBoard,
+    transfers,
+    nextArrival: first.departMins - nowMins,
+    crowdLevel: getCrowdLevel(),
+    sunAnalysis: sunAnalysisForSteps(
+      steps, origin, destination,
+      rides.map(r => `${r.lineNum}_${r.dir}_${r.fromStopId}_${r.toStopId}`).join('|'),
+      first.departMins - nowMins
+    ),
+    boardingStop: { id: firstBoard.id, name: firstBoard.name, latitude: firstBoard.lat, longitude: firstBoard.lon },
+    alightingStop: { id: lastAlight.id, name: lastAlight.name, latitude: lastAlight.lat, longitude: lastAlight.lon },
+    steps,
+    confidence: confidenceDetail.score,
+    confidenceDetail,
+    hasIncompleteData: !allScheduled,
+    departAtMins: j.departMins,
+    arriveAtMins: j.arriveMins,
+  };
+}
+
+const MULTI_RESULT_LIMIT = 5;
+
+// Tarifeye göre en erken varan seçenekler; her aktarma sayısı için en iyisi, ardından sonraki kalkışlar.
+function shiftJourney(j: RaptorJourney, add: number): RaptorJourney {
+  return {
+    ...j,
+    departMins: j.departMins + add,
+    arriveMins: j.arriveMins + add,
+    legs: j.legs.map(l => ({ ...l, departMins: l.departMins + add, arriveMins: l.arriveMins + add })),
+  };
+}
+
+const FIRST_MORNING_SEARCH_MINS = 5 * 60;
+
+function collectJourneys(
+  o: { lat: number; lon: number },
+  d: { lat: number; lon: number },
+  maxWalkM: number,
+  serviceDate: Date,
+  startMins: number,
+  dayOffset: number,
+  origin: Location,
+  destination: Location,
+  nowMins: number
+): Route[] {
+  // Aynı hatlarla aynı saatte varan seçeneklerden en geç yola çıkılanı (en az bekleteni) tutulur.
+  const bySig = new Map<string, Route>();
+  let departAt = startMins;
+  for (let pass = 0; pass < 8 && bySig.size < MULTI_RESULT_LIMIT; pass++) {
+    const journeys = raptorSearch(o, d, { maxAccessWalkM: maxWalkM, date: serviceDate, departAtMins: departAt });
+    if (journeys.length === 0) break;
+    for (const raw of journeys) {
+      const j = dayOffset ? shiftJourney(raw, dayOffset) : raw;
+      const sig = `${j.legs.filter(l => l.type === 'ride').map(l => `${l.lineNum}.${l.dir}`).join('-')}@${j.arriveMins}`;
+      const prev = bySig.get(sig);
+      if (prev && (prev.departAtMins ?? 0) >= j.departMins) continue;
+      const r = journeyToRoute(j, origin, destination, nowMins);
+      if (r) bySig.set(sig, r);
+    }
+    // Bir sonraki tur: en erken seçeneğin ilk aracından bir dakika sonra yola çıkılırsa ne olur
+    const earliestFirstRide = Math.min(...journeys.map(j => j.legs.find(l => l.type === 'ride')!.departMins));
+    const firstWalk = journeys[0].legs[0].type === 'walk' ? journeys[0].legs[0].arriveMins - journeys[0].legs[0].departMins : 0;
+    departAt = earliestFirstRide - firstWalk + 1;
+  }
+  return [...bySig.values()].sort((a, b) => (a.arriveAtMins ?? 0) - (b.arriveAtMins ?? 0)).slice(0, MULTI_RESULT_LIMIT);
+}
+
+// Gece 03:00'e kadar önceki günün tarifesi geçerli: servis günü ve o güne göre dakika.
+function serviceClock(at: Date): { serviceDate: Date; mins: number } {
+  const mins = at.getHours() * 60 + at.getMinutes();
+  return mins < 180
+    ? { serviceDate: new Date(at.getTime() - 86_400_000), mins: mins + 1440 }
+    : { serviceDate: at, mins };
+}
+
+function dayIndex(d: Date): number {
+  return Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 86_400_000);
+}
+
+// Tarifeye göre en erken varan seçenekler; bu gece sefer kalmadıysa ertesi sabahın ilk seçenekleri.
+// departAt verilirse o saatten itibaren aranır (dakikalar bugünün servis gününe göre ifade edilir).
+function findMultiLegRoutes(origin: Location, destination: Location, maxWalkM: number, departAt?: Date): Route[] {
+  const { serviceDate, mins: nowMins } = serviceClock(new Date());
+  const o = { lat: origin.latitude, lon: origin.longitude };
+  const d = { lat: destination.latitude, lon: destination.longitude };
+  if (departAt) {
+    const target = serviceClock(departAt);
+    const offset = (dayIndex(target.serviceDate) - dayIndex(serviceDate)) * 1440;
+    return collectJourneys(o, d, maxWalkM, target.serviceDate, target.mins, offset, origin, destination, nowMins);
+  }
+  const today = collectJourneys(o, d, maxWalkM, serviceDate, nowMins, 0, origin, destination, nowMins);
+  if (today.length > 0) return today;
+  const nextDay = new Date(serviceDate.getTime() + 86_400_000);
+  return collectJourneys(o, d, maxWalkM, nextDay, FIRST_MORNING_SEARCH_MINS, 1440, origin, destination, nowMins)
+    .map(r => ({ ...r, isNextDay: true }));
+}
+
+const RETIME_EARLY_SLACK_MINS = 10;
+
+// Tarifeyle bulunan rotayı baştan sona yeniden zamanlar: otobüs bacakları için İZTEK canlı tahmini
+// (yoksa tarife), raylı/vapur için tarife. Bir araç gecikirse sonraki aktarmalar da buna göre kayar.
+async function retimeWithLive(route: Route): Promise<Route> {
+  const steps = (route.steps ?? []).map(s => ({ ...s }));
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes() + (now.getHours() < 3 ? 1440 : 0);
+  let t = nowMins;
+  let anyLive = false;
+  let firstDep: number | null = null;
+  try {
+    for (const step of steps) {
+      if (step.type === 'walk') { t += step.durationMins; continue; }
+      if (!step.lineNumber || step.dir === undefined || !step.boardStopId || !step.boardStop) {
+        t = Math.max(t, step.departureMins ?? t) + step.durationMins;
+        continue;
+      }
+      // Planlanan seferden çok önceki bir araca atlamasın: otobüste 10 dk erken gelme payı, rayda tarife kesin
+      const planned = step.departureMins ?? t;
+      const slack = getLineMode(step.lineNumber) === 'bus' ? RETIME_EARLY_SLACK_MINS : 0;
+      const est = await nextArrival(
+        step.lineNumber,
+        step.dir,
+        { id: step.boardStopId, lat: step.boardStop.latitude, lon: step.boardStop.longitude },
+        Math.max(t, planned - slack) - nowMins
+      );
+      const dep = est.mins < NO_SERVICE_MINS ? Math.max(t, nowMins + est.mins) : Math.max(t, step.departureMins ?? t);
+      step.departureMins = dep;
+      step.departureTime = clockLabel(dep);
+      step.isLive = est.isLive && est.mins < NO_SERVICE_MINS;
+      anyLive ||= !!step.isLive;
+      if (firstDep === null) firstDep = dep;
+      t = dep + step.durationMins;
+    }
+  } catch (e) {
+    console.warn('[retimeWithLive] canlı yeniden zamanlama yapılamadı, tarife korunuyor:', e);
+    return route;
+  }
+  if (firstDep === null) return route;
+  const firstWalk = steps[0]?.type === 'walk' ? steps[0].durationMins : 0;
+  const confidenceDetail = route.confidenceDetail
+    ? calcConfidenceDetail(anyLive, route.confidenceDetail.hasScheduleData,
+      steps[0]?.distanceMeters ?? 0, steps[steps.length - 1]?.distanceMeters ?? 0)
+    : undefined;
+  return {
+    ...route,
+    steps,
+    nextArrival: firstDep - nowMins,
+    departAtMins: firstDep - firstWalk,
+    arriveAtMins: t,
+    estimatedDuration: t - firstDep + firstWalk,
+    confidence: confidenceDetail?.score ?? route.confidence,
+    confidenceDetail,
+  };
+}
+
+const WALK_ONLY_MAX_M = 2500;
+
+function walkOnlyRoute(origin: Location, destination: Location): Route | null {
+  const w = walkCalc(origin, destination);
+  if (w.meters > WALK_ONLY_MAX_M) return null;
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  return {
+    id: 'walk-only',
+    lineNumber: '',
+    lineName: 'Yürüyerek',
+    estimatedDuration: w.mins,
+    transfers: [],
+    nextArrival: 0,
+    crowdLevel: 'low',
+    steps: [{ type: 'walk', durationMins: w.mins, toStopName: destination.name, distanceMeters: w.meters }],
+    departAtMins: nowMins,
+    arriveAtMins: nowMins + w.mins,
+    isWalkOnly: true,
+  };
 }
 
 // Bekleme dahil varış: önce durağa yürünür, otobüs beklenir, sonra yolculuk sürer.
 function arrivalAtDestinationMins(r: Route): number {
+  if (r.arriveAtMins !== undefined) {
+    const now = new Date();
+    let nowMins = now.getHours() * 60 + now.getMinutes();
+    if (nowMins < 180) nowMins += 1440;
+    return r.arriveAtMins - nowMins;
+  }
   if (r.nextArrival >= NO_SERVICE_MINS) return Infinity;
   const walkToBoard = r.steps?.[0]?.type === 'walk' ? r.steps[0].durationMins : 0;
   return Math.max(r.nextArrival, walkToBoard) + r.estimatedDuration - walkToBoard;

@@ -75,13 +75,17 @@ export async function signInWithEmail(email: string, password: string): Promise<
       const data = snap.data() as User;
       return {
         ...data,
+        uid: fallback.uid,
+        isGuest: false,
         displayName: data.displayName ?? fallback.displayName,
         email: data.email ?? fallback.email,
         photoURL: data.photoURL ?? fallback.photoURL,
       };
     }
     await upsertUser(fallback);
-  } catch {}
+  } catch (e) {
+    console.warn('[auth] kullanıcı profili okunamadı, temel bilgilerle devam ediliyor:', e);
+  }
 
   return fallback;
 }

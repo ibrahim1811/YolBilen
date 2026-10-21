@@ -12,6 +12,12 @@ import { lightTheme, darkTheme } from './src/theme/theme';
 import { useAppStore } from './src/store/useAppStore';
 import { auth, db } from './src/services/firebase/config';
 import type { User } from './src/types';
+import { installErrorReporting, setReportUser } from './src/services/report/reportService';
+import { loadRemoteConfig } from './src/services/config/remoteConfig';
+
+// Modül yüklenirken: ilk render'dan önce oluşan hatalar da raporlanabilsin
+installErrorReporting();
+loadRemoteConfig().catch(e => console.warn('[App] uzaktan ayar alınamadı, son bilinen kullanılıyor:', e));
 
 function ThemedApp() {
   const isDarkMode = useAppStore((s) => s.isDarkMode);
@@ -20,6 +26,7 @@ function ThemedApp() {
 
   React.useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
+      setReportUser(firebaseUser?.uid ?? null);
       if (firebaseUser) {
         try {
           const snap = await getDoc(doc(db, 'users', firebaseUser.uid));
@@ -27,6 +34,8 @@ function ThemedApp() {
             const data = snap.data() as User;
             setUser({
               ...data,
+              uid: firebaseUser.uid,
+              isGuest: firebaseUser.isAnonymous,
               displayName: data.displayName ?? firebaseUser.displayName,
               email: data.email ?? firebaseUser.email,
               photoURL: data.photoURL ?? firebaseUser.photoURL,
@@ -40,7 +49,8 @@ function ThemedApp() {
               isGuest: firebaseUser.isAnonymous,
             });
           }
-        } catch {
+        } catch (e) {
+          console.warn('[App] kullanıcı profili okunamadı, temel bilgilerle devam ediliyor:', e);
           setUser({
             uid: firebaseUser.uid,
             displayName: firebaseUser.displayName,

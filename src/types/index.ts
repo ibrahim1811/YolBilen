@@ -19,22 +19,31 @@ export interface RouteStop {
   longitude: number;
 }
 
+export type TransitMode = 'bus' | 'metro' | 'tram' | 'rail' | 'ferry';
+
 export interface RouteStep {
   type: 'walk' | 'transit';
   durationMins: number;
   toStopName?: string;
   distanceMeters?: number;
   lineNumber?: string;
+  mode?: TransitMode;
   boardStop?: { name: string; latitude: number; longitude: number };
   alightStop?: { name: string; latitude: number; longitude: number };
   intermediateStops?: Array<{ name: string; latitude: number; longitude: number }>;
   departureTime?: string;
+  departureMins?: number;
+  headsign?: string;
+  dir?: 0 | 1;
+  boardStopId?: string;
+  isLive?: boolean;
 }
 
 export interface Route {
   id: string;
   lineNumber: string;
   lineName: string;
+  mode?: TransitMode;
   estimatedDuration: number;
   transfers: Transfer[];
   nextArrival: number;
@@ -46,6 +55,11 @@ export interface Route {
   confidence?: number;
   hasIncompleteData?: boolean;
   confidenceDetail?: RouteConfidenceDetail;
+  // Gece yarısından dakika (gece yarısını geçerse 1440+); tarifeye göre hesaplanır.
+  departAtMins?: number;
+  arriveAtMins?: number;
+  isWalkOnly?: boolean;
+  isNextDay?: boolean;
 }
 
 export interface RouteConfidenceDetail {
@@ -184,6 +198,7 @@ export interface CommunityAlert {
   createdAt: Date;
   expiresAt: Date;
   upvotes: number;
+  upvoters?: string[];
 }
 
 export type RouteFilterMode = 'fastest' | 'comfortable' | 'cool' | 'least_transfers' | 'night_safe';

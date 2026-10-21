@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import {
   getUserFavoriteLocations,
@@ -20,6 +20,7 @@ export function useFavorites() {
   const removeLocStore = useAppStore((s) => s.removeFavoriteLocation);
   const addLineStore = useAppStore((s) => s.addFavoriteLine);
   const removeLineStore = useAppStore((s) => s.removeFavoriteLine);
+  const [loadError, setLoadError] = useState(false);
 
   useEffect(() => {
     if (!user || user.isGuest) {
@@ -27,8 +28,14 @@ export function useFavorites() {
       setFavoriteLines([]);
       return;
     }
-    getUserFavoriteLocations(user.uid).then(setFavoriteLocations).catch(() => {});
-    getUserFavoriteLines(user.uid).then(setFavoriteLines).catch(() => {});
+    setLoadError(false);
+    Promise.all([
+      getUserFavoriteLocations(user.uid).then(setFavoriteLocations),
+      getUserFavoriteLines(user.uid).then(setFavoriteLines),
+    ]).catch(e => {
+      console.warn('[useFavorites] favoriler yüklenemedi:', e);
+      setLoadError(true);
+    });
   }, [user?.uid, user?.isGuest]);
 
   const addLocation = useCallback(
@@ -70,6 +77,7 @@ export function useFavorites() {
   );
 
   return {
+    loadError,
     favoriteLocations,
     favoriteLines,
     addLocation,

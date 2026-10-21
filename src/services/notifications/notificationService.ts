@@ -37,21 +37,19 @@ async function ensureAndroidChannels() {
   });
 }
 
+export async function ensureLocalNotificationPermission(): Promise<boolean> {
+  await ensureAndroidChannels();
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  if (existing === 'granted') return true;
+  const { status } = await Notifications.requestPermissionsAsync();
+  return status === 'granted';
+}
+
 export async function registerForPushNotifications(): Promise<string | null> {
   if (!Device.isDevice) return null;
 
   try {
-    await ensureAndroidChannels();
-
-    const { status: existing } = await Notifications.getPermissionsAsync();
-    let finalStatus = existing;
-
-    if (existing !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== 'granted') return null;
+    if (!(await ensureLocalNotificationPermission())) return null;
 
     const token = (await Notifications.getExpoPushTokenAsync()).data;
     return token;

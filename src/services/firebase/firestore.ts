@@ -95,18 +95,19 @@ export async function getRecentFeedbacks(limitCount = 10): Promise<Feedback[]> {
 export async function getUserFavoriteLocations(userId: string): Promise<FavoriteLocation[]> {
   const q = query(
     collection(db, 'favorite_locations'),
-    where('userId', '==', userId),
-    orderBy('createdAt', 'asc')
+    where('userId', '==', userId)
   );
   const snap = await getDocs(q);
-  return snap.docs.map(d => {
-    const data = d.data();
-    return {
-      id: d.id,
-      ...data,
-      createdAt: (data.createdAt as Timestamp).toDate(),
-    } as FavoriteLocation;
-  });
+  return snap.docs
+    .map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        ...data,
+        createdAt: (data.createdAt as Timestamp | undefined)?.toDate() ?? new Date(0),
+      } as FavoriteLocation;
+    })
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 }
 
 export async function addFavoriteLocation(
@@ -135,18 +136,19 @@ export async function removeFavoriteLocation(id: string): Promise<void> {
 export async function getUserFavoriteLines(userId: string): Promise<FavoriteLine[]> {
   const q = query(
     collection(db, 'favorite_lines'),
-    where('userId', '==', userId),
-    orderBy('createdAt', 'asc')
+    where('userId', '==', userId)
   );
   const snap = await getDocs(q);
-  return snap.docs.map(d => {
-    const data = d.data();
-    return {
-      id: d.id,
-      ...data,
-      createdAt: (data.createdAt as Timestamp).toDate(),
-    } as FavoriteLine;
-  });
+  return snap.docs
+    .map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        ...data,
+        createdAt: (data.createdAt as Timestamp | undefined)?.toDate() ?? new Date(0),
+      } as FavoriteLine;
+    })
+    .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 }
 
 export async function addFavoriteLine(

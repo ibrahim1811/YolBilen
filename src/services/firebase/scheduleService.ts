@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from './config';
+import { getRailSchedule } from '../../data/gtfsData';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const BUNDLED_SCHEDULES: Record<string, any> = require('../../data/schedules.json');
@@ -66,6 +67,9 @@ function bundledFallback(lineNumber: string): LineSchedule | null {
 }
 
 export async function getLineScheduleFromFirestore(lineNumber: string): Promise<LineSchedule> {
+  const rail = getRailSchedule(lineNumber);
+  if (rail) return rail;
+
   const cached = await getCached(lineNumber);
   if (cached) return cached;
 
@@ -87,6 +91,12 @@ export async function getLineScheduleFromFirestore(lineNumber: string): Promise<
 
   // Yedek veri önbelleğe yazılmaz; böylece bir sonraki açılışta Firestore yeniden denenir.
   return bundledFallback(lineNumber) ?? {};
+}
+
+// Uygulama içi tarifeden bir yönün ilk duraktan kalkışları (rota motoru için, senkron).
+export function getBundledDepartures(lineNumber: string, dir: 0 | 1, serviceType: ServiceType): number[] {
+  const svc = bundledFallback(lineNumber)?.[serviceType];
+  return (dir === 0 ? svc?.gidis : svc?.donus) ?? [];
 }
 
 export function getScheduleForDay(schedule: LineSchedule, serviceType: ServiceType) {

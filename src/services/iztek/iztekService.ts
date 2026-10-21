@@ -1,4 +1,6 @@
 import { getOrderedStopsForDir, getRouteShape } from '../../data/gtfsData';
+import { getRemoteConfig } from '../config/remoteConfig';
+import { getEshotArrivals, type EshotArrival } from './eshotWebService';
 
 const BASE = 'https://openapi.izmir.bel.tr/api/iztek';
 const MINS_PER_STOP = 1.5;
@@ -147,26 +149,47 @@ export interface ApproachingBus {
   hattinYonu: number;
   lat: number;
   lon: number;
+  // ESHOT web sayfasının resmi değerleri; yoksa tahmin kullanılır
+  kalanDk?: number;
+  mesafeM?: number;
 }
 
-export async function getApproachingBuses(iztekStopId: number): Promise<ApproachingBus[]> {
-  const json = await iztekGet(`duragayaklasanotobusler/${iztekStopId}`);
-  if (!Array.isArray(json)) throw new IztekError('Beklenmeyen yanıt: duragayaklasanotobusler');
-  const byBus = new Map<number, ApproachingBus>();
-  for (const b of json) {
-    const bus: ApproachingBus = {
-      otobusId: b.OtobusId,
-      hatNumarasi: b.HatNumarasi,
-      hatAdi: b.HatAdi ?? '',
-      kalanDurakSayisi: b.KalanDurakSayisi ?? 0,
-      hattinYonu: b.HattinYonu ?? 0,
-      lat: parseCoord(b.KoorX),
-      lon: parseCoord(b.KoorY),
-    };
-    const prev = byBus.get(bus.otobusId);
-    if (!prev || bus.kalanDurakSayisi < prev.kalanDurakSayisi) byBus.set(bus.otobusId, bus);
+const APPROACHING_CACHE_MS = 20_000;
+const approachingCache = new Map<number, { at: number; promise: Promise<ApproachingBus[]> }>();
+
+// Aynı durak birkaç saniye içinde tekrar sorulursa (rota aramasında aynı aktarma durağı) tek istek atılır.
+export function getApproachingBuses(iztekStopId: number): Promise<ApproachingBus[]> {
+  // Uzaktan ayarla kapatılabilir (ör. İZTEK servisi bozuk veri dönerse); çağıranlar tarifeye düşer
+  if (!getRemoteConfig().features.liveArrivals) {
+    return Promise.reject(new IztekError('Canlı veri uzaktan ayarla kapatıldı'));
   }
-  return [...byBus.values()].sort((a, b) => a.kalanDurakSayisi - b.kalanDurakSayisi);
+  const hit = approachingCache.get(iztekStopId);
+  if (hit && Date.now() - hit.at < APPROACHING_CACHE_MS) return hit.promise;
+  const promise = fetchApproachingBuses(iztekStopId);
+  approachingCache.set(iztekStopId, { at: Date.now(), promise });
+  promise.catch(() => approachingCache.delete(iztekStopId));
+  return promise;
+}
+
+// Yaklaşan otobüsler yalnızca ESHOT'un "Otobüsüm Nerede" sayfasından gelir (konum vermez, lat/lon 0).
+async function fetchApproachingBuses(iztekStopId: number): Promise<ApproachingBus[]> {
+  let arrivals: EshotArrival[];
+  try {
+    arrivals = await getEshotArrivals(iztekStopId);
+  } catch (e) {
+    throw new IztekError(`ESHOT canlı verisi alınamadı: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  return arrivals.map((a, i) => ({
+    otobusId: i + 1,
+    hatNumarasi: a.hatNumarasi,
+    hatAdi: a.hatAdi,
+    kalanDurakSayisi: Math.round(a.kalanDk / MINS_PER_STOP),
+    hattinYonu: 0,
+    lat: 0,
+    lon: 0,
+    kalanDk: a.kalanDk,
+    mesafeM: a.mesafeM,
+  }));
 }
 
 export interface BusPosition {
@@ -269,6 +292,7 @@ export function isWaitingAtTerminal(bus: ApproachingBus, gtfsStopId?: string): b
 
 // ESHOT Mobil ile aynı mantık: güzergah boyunca kalan mesafe / sabit hız.
 export function estimateArrivalMins(bus: ApproachingBus, gtfsStopId?: string): number {
+  if (bus.kalanDk !== undefined) return Math.max(1, bus.kalanDk);
   const located = gtfsStopId ? locateBusOnRoute(bus, gtfsStopId) : null;
   if (!located) return minsFromRemainingStops(bus.kalanDurakSayisi);
   return Math.max(1, Math.round((located.km / ESHOT_SPEED_KMH) * 60));

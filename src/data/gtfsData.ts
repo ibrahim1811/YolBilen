@@ -1,3 +1,5 @@
+import type { TransitMode } from '../types';
+
 export interface IzmirStop {
   id: string;
   name: string;
@@ -6,6 +8,148 @@ export interface IzmirStop {
 }
 
 interface StopRouteDir { lineNum: string; dir: 0 | 1; }
+
+export type ServiceType = 'weekday' | 'saturday' | 'sunday';
+
+// Metro, tramvay, İZBAN ve vapur — scripts/build-rail-gtfs.mjs üretir.
+// offsets: hattın ilk durağından her durağa dakika; deps: ilk duraktan kalkışlar (gece yarısından dakika).
+interface RailData {
+  lines: Record<string, { name: string; mode: Exclude<TransitMode, 'bus'>; color: string }>;
+  stops: IzmirStop[];
+  seqs: Record<string, string[]>;
+  offsets: Record<string, number[]>;
+  deps: Record<string, Record<ServiceType, number[]>>;
+}
+
+let _rail: RailData | null = null;
+let _railStopRouteDirs: Record<string, StopRouteDir[]> | null = null;
+
+function getRail(): RailData {
+  if (!_rail) _rail = require('./gtfs/rail.json') as RailData;
+  return _rail;
+}
+
+export function getLineMode(lineNum: string): TransitMode {
+  return getRail().lines[lineNum]?.mode ?? 'bus';
+}
+
+export function getLineColor(lineNum: string): string | undefined {
+  return getRail().lines[lineNum]?.color;
+}
+
+export const TRANSIT_MODE_ICON: Record<TransitMode, 'bus' | 'subway-variant' | 'tram' | 'train' | 'ferry'> = {
+  bus: 'bus',
+  metro: 'subway-variant',
+  tram: 'tram',
+  rail: 'train',
+  ferry: 'ferry',
+};
+
+export const TRANSIT_MODE_LABEL: Record<TransitMode, string> = {
+  bus: 'Hat',
+  metro: 'Metro',
+  tram: 'Tramvay',
+  rail: 'İZBAN',
+  ferry: 'Vapur',
+};
+
+// Ekranlarda gösterilecek kısa hat adı: "Hat 302", "M1", "İZBAN-1", vapurda iskele adı.
+export function lineTitle(lineNum: string): string {
+  const line = getRail().lines[lineNum];
+  if (!line) return `Hat ${lineNum}`;
+  return line.mode === 'ferry' ? `Vapur · ${line.name}` : lineNum;
+}
+
+export function stopMode(stopId: string): TransitMode {
+  const dirs = getRailStopRouteDirs()[stopId];
+  return dirs?.length ? getLineMode(dirs[0].lineNum) : 'bus';
+}
+
+function todayServiceType(): ServiceType {
+  const day = new Date().getDay();
+  return day === 0 ? 'sunday' : day === 6 ? 'saturday' : 'weekday';
+}
+
+// Raylı/vapur hatlarında durağa geliş (dakika); bugün yetişilebilecek sefer yoksa null.
+export function getRailArrivalMins(lineNum: string, dir: 0 | 1, stopId: string, afterMins = 0): number | null {
+  const rail = getRail();
+  const key = `${lineNum}_${dir}`;
+  const idx = rail.seqs[key]?.indexOf(stopId) ?? -1;
+  const times = rail.deps[key]?.[todayServiceType()];
+  if (idx < 0 || !times?.length) return null;
+  const offset = rail.offsets[key][idx];
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  let best = Infinity;
+  for (const dep of times) {
+    for (const d of dep < 180 ? [dep, dep + 1440] : [dep]) {
+      const wait = d + offset - nowMins;
+      if (wait >= afterMins && wait < best) best = wait;
+    }
+  }
+  return isFinite(best) ? best : null;
+}
+
+let _busOffsets: Record<string, { o: number[]; m: number[] }> | null = null;
+
+// ESHOT planındaki durak bazlı süreler (ilk duraktan dakika), route-stop-seqs ile aynı sırada.
+// scripts/build-bus-offsets.mjs üretir; hat için veri yoksa null.
+export function getBusOffsets(lineNum: string, dir: 0 | 1): number[] | null {
+  if (!_busOffsets) _busOffsets = require('./gtfs/route-offsets.json');
+  return _busOffsets![`${lineNum}_${dir}`]?.o ?? null;
+}
+
+// İki durak arası planlanan süre (dakika); veri yoksa null.
+export function getBusRideMins(lineNum: string, dir: 0 | 1, boardId: string, alightId: string): number | null {
+  const offs = getBusOffsets(lineNum, dir);
+  const seq = getRouteStopSeqs()[`${lineNum}_${dir}`];
+  if (!offs || !seq || offs.length !== seq.length) return null;
+  const b = seq.indexOf(boardId), a = seq.indexOf(alightId);
+  if (b < 0 || a <= b) return null;
+  return Math.max(1, Math.round(offs[a] - offs[b]));
+}
+
+export function getBusOffsetAt(lineNum: string, dir: 0 | 1, stopId: string): number | null {
+  const offs = getBusOffsets(lineNum, dir);
+  const seq = getRouteStopSeqs()[`${lineNum}_${dir}`];
+  if (!offs || !seq || offs.length !== seq.length) return null;
+  const i = seq.indexOf(stopId);
+  return i < 0 ? null : Math.round(offs[i]);
+}
+
+// Raylı/vapur hattının bir yönü için durak ofsetleri ve kalkışlar (rota motoru için).
+export function getRailTimetable(lineNum: string, dir: 0 | 1, svc: ServiceType): { offsets: number[]; deps: number[] } | null {
+  const rail = getRail();
+  const key = `${lineNum}_${dir}`;
+  if (!rail.seqs[key]) return null;
+  return { offsets: rail.offsets[key] ?? [], deps: rail.deps[key]?.[svc] ?? [] };
+}
+
+// Hattın ilk durağından kalkışlar, scheduleService'in LineSchedule biçiminde.
+export function getRailSchedule(lineNum: string): Partial<Record<ServiceType, { gidis: number[]; donus: number[] }>> | null {
+  const rail = getRail();
+  if (!rail.lines[lineNum]) return null;
+  const d0 = rail.deps[`${lineNum}_0`];
+  const d1 = rail.deps[`${lineNum}_1`];
+  const result: Partial<Record<ServiceType, { gidis: number[]; donus: number[] }>> = {};
+  for (const svc of ['weekday', 'saturday', 'sunday'] as ServiceType[]) {
+    const gidis = d0?.[svc] ?? [];
+    const donus = d1?.[svc] ?? [];
+    if (gidis.length || donus.length) result[svc] = { gidis, donus };
+  }
+  return result;
+}
+
+// Tarifeye göre iki durak arası yolculuk süresi; durak bulunamazsa null.
+export function getRailRideMins(lineNum: string, dir: 0 | 1, boardId: string, alightId: string): number | null {
+  const rail = getRail();
+  const key = `${lineNum}_${dir}`;
+  const seq = rail.seqs[key];
+  if (!seq) return null;
+  const b = seq.indexOf(boardId), a = seq.indexOf(alightId);
+  if (b < 0 || a <= b) return null;
+  return Math.max(1, rail.offsets[key][a] - rail.offsets[key][b]);
+}
 
 let _stops: IzmirStop[] | null = null;
 let _stopIndex: Map<string, IzmirStop> | null = null;
@@ -46,7 +190,7 @@ function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: num
 }
 
 export function getStops(): IzmirStop[] {
-  if (!_stops) _stops = require('./gtfs/stops.json') as IzmirStop[];
+  if (!_stops) _stops = [...(require('./gtfs/stops.json') as IzmirStop[]), ...getRail().stops];
   return _stops;
 }
 
@@ -58,13 +202,25 @@ export function getStopIndex(): Map<string, IzmirStop> {
   return _stopIndex;
 }
 
+function getRailStopRouteDirs(): Record<string, StopRouteDir[]> {
+  if (_railStopRouteDirs) return _railStopRouteDirs;
+  _railStopRouteDirs = {};
+  for (const [key, ids] of Object.entries(getRail().seqs)) {
+    const sep = key.lastIndexOf('_');
+    const lineNum = key.slice(0, sep);
+    const dir = Number(key.slice(sep + 1)) as 0 | 1;
+    for (const id of ids) (_railStopRouteDirs[id] ??= []).push({ lineNum, dir });
+  }
+  return _railStopRouteDirs;
+}
+
 export function getStopRouteDirs(): Record<string, StopRouteDir[]> {
-  if (!_stopRouteDirs) _stopRouteDirs = require('./gtfs/stop-route-dirs.json');
+  if (!_stopRouteDirs) _stopRouteDirs = { ...require('./gtfs/stop-route-dirs.json'), ...getRailStopRouteDirs() };
   return _stopRouteDirs!;
 }
 
 export function getRouteStopSeqs(): Record<string, string[]> {
-  if (!_routeStopSeqs) _routeStopSeqs = require('./gtfs/route-stop-seqs.json');
+  if (!_routeStopSeqs) _routeStopSeqs = { ...require('./gtfs/route-stop-seqs.json'), ...getRail().seqs };
   return _routeStopSeqs!;
 }
 
@@ -73,14 +229,16 @@ export function isRingRoute(lineNum: string): boolean {
   return _ringRoutes.has(lineNum);
 }
 
+// Raylı/vapur hatlarında şekil verisi yok; duraklar sırayla birleştirilir.
 export function getRouteShape(lineNum: string, dir: 0 | 1): [number, number][] {
+  if (getLineMode(lineNum) !== 'bus') return getOrderedStopsForDir(lineNum, dir).map(s => [s.lat, s.lon]);
   if (!_shapes) _shapes = require('./gtfs/shapes.json');
   return _shapes![`${lineNum}_${dir}`] ?? [];
 }
 
 export function getRouteName(lineNum: string): string | undefined {
   if (!_routeMeta) _routeMeta = require('./gtfs/route-meta.json');
-  return _routeMeta![lineNum]?.name;
+  return _routeMeta![lineNum]?.name ?? getRail().lines[lineNum]?.name;
 }
 
 let _allLines: Array<{ lineNum: string; name: string }> | null = null;
@@ -88,7 +246,10 @@ let _allLines: Array<{ lineNum: string; name: string }> | null = null;
 export function getAllLines(): Array<{ lineNum: string; name: string }> {
   if (_allLines) return _allLines;
   if (!_routeMeta) _routeMeta = require('./gtfs/route-meta.json');
-  _allLines = Object.entries(_routeMeta!).map(([lineNum, { name }]) => ({ lineNum, name }));
+  _allLines = [
+    ...Object.entries(_routeMeta!).map(([lineNum, { name }]) => ({ lineNum, name })),
+    ...Object.entries(getRail().lines).map(([lineNum, { name }]) => ({ lineNum, name })),
+  ];
   return _allLines;
 }
 

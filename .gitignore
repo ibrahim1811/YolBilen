@@ -45,3 +45,12 @@ serviceAccount.json
 # generated native folders
 /ios
 /android
+
+# veri-guncelle.ps1 logları
+scripts/logs/
+
+# Cloudflare yükleme anahtarı
+.ota-token
+dist-ota/
+
+update-worker/.wrangler/

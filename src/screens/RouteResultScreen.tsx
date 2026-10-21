@@ -1,17 +1,20 @@
-import { minsToArrivalLabel } from '../services/firebase/scheduleService';
 import React, { useEffect } from 'react';
 import SunCalc from 'suncalc';
 import { trackScreenView } from '../services/telemetry/telemetryService';
-import { View, StyleSheet, ScrollView } from 'react-native';
-import { Text, useTheme, Appbar, Surface, Divider, Button } from 'react-native-paper';
+import { View, StyleSheet, ScrollView, Share, TouchableOpacity } from 'react-native';
+import WebView from 'react-native-webview';
+import { buildMapHtml } from './RouteMapScreen';
+import { Text, useTheme, Appbar, Surface, Button } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { CrowdBadge } from '../components/common/CrowdBadge';
 import { SunSideCard } from '../components/sun/SunSideCard';
 import { ComfortScoreCard } from '../components/lines/ComfortScoreCard';
 import { getLineComfortScore } from '../services/firebase/lineStats';
+import { lineTitle } from '../data/gtfsData';
 import { useWeather } from '../hooks/useWeather';
-import type { ComfortScore, RouteStep } from '../types';
+import { JourneyTimeline, buildTimeline, hhmm } from '../components/route/JourneyTimeline';
+import type { ComfortScore, Route, RouteStep } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
@@ -21,6 +24,8 @@ type Props = NativeStackScreenProps<RootStackParamList, 'RouteResults'>;
 export function RouteResultScreen({ navigation }: Props) {
   const theme = useTheme();
   const selectedRoute = useAppStore((s) => s.selectedRoute);
+  const origin = useAppStore((s) => s.origin);
+  const destination = useAppStore((s) => s.destination);
   const [comfortScore, setComfortScore] = React.useState<ComfortScore | null>(null);
   const weather = useWeather();
 
@@ -31,7 +36,7 @@ export function RouteResultScreen({ navigation }: Props) {
   useEffect(() => { trackScreenView('RouteResult'); }, []);
 
   React.useEffect(() => {
-    if (!selectedRoute) return;
+    if (!selectedRoute || selectedRoute.isWalkOnly) return;
     let cancelled = false;
     getLineComfortScore(selectedRoute.lineNumber)
       .then(score => { if (!cancelled) setComfortScore(score); })
@@ -42,7 +47,20 @@ export function RouteResultScreen({ navigation }: Props) {
     return () => { cancelled = true; };
   }, [selectedRoute?.lineNumber]);
 
+  const mapHtml = React.useMemo(() => {
+    if (!selectedRoute) return '';
+    const b = selectedRoute.boardingStop;
+    const a = selectedRoute.alightingStop;
+    return buildMapHtml({
+      boarding: b ? { latitude: b.latitude, longitude: b.longitude, name: b.name } : null,
+      alighting: a ? { latitude: a.latitude, longitude: a.longitude, name: a.name } : null,
+      center: b ? [b.latitude, b.longitude] : [38.4192, 27.1287],
+      steps: selectedRoute.steps,
+    });
+  }, [selectedRoute]);
+
   if (!selectedRoute) return null;
+  const isWalk = !!selectedRoute.isWalkOnly;
 
   const lat = selectedRoute.boardingStop?.latitude ?? 38.4192;
   const lon = selectedRoute.boardingStop?.longitude ?? 27.1287;
@@ -55,109 +73,79 @@ export function RouteResultScreen({ navigation }: Props) {
       <Appbar.Header style={{ backgroundColor: theme.colors.background }} elevated={false}>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title="Rota Detayı" titleStyle={styles.headerTitle} />
+        <Appbar.Action
+          icon="share-variant"
+          accessibilityLabel="Rotayı paylaş"
+          onPress={() => {
+            Share.share({ message: buildShareText(selectedRoute, origin?.name, destination?.name) })
+              .catch(e => console.warn('[RouteResult] paylaşılamadı:', e));
+          }}
+        />
       </Appbar.Header>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-        <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
-          <View style={styles.lineHeader}>
-            <View style={[styles.lineBadge, { backgroundColor: theme.colors.primary }]}>
-              <Text style={styles.lineNumber}>{selectedRoute.lineNumber}</Text>
-            </View>
-            <View>
-              <Text style={[styles.lineName, { color: theme.colors.onSurface }]}>
-                {selectedRoute.lineName}
-              </Text>
-              <Text style={[styles.lineSubtitle, { color: theme.colors.onSurfaceVariant }]}>
-                Hat Detayları
-              </Text>
-            </View>
-          </View>
-
-          <Divider style={styles.divider} />
-
-          <View style={styles.statsGrid}>
-            <StatItem
-              icon="clock-outline"
-              label="Süre"
-              value={`${selectedRoute.estimatedDuration} dk`}
-              color={theme.colors.primary}
+        {!isWalk && (
+          <View style={styles.mapPreview}>
+            <WebView
+              style={styles.mapWeb}
+              source={{ html: mapHtml }}
+              originWhitelist={['*']}
+              javaScriptEnabled
+              scrollEnabled={false}
             />
-            <StatItem
-              icon="bus-clock"
-              label="Sonraki Otobüs"
-              value={minsToArrivalLabel(selectedRoute.nextArrival)}
-              color="#34A853"
-            />
-            <StatItem
-              icon="transfer"
-              label="Aktarma"
-              value={selectedRoute.transfers.length === 0 ? 'Yok' : `${selectedRoute.transfers.length}x`}
-              color="#FBBC04"
-            />
-          </View>
-
-          <View style={styles.crowdRow}>
-            <Text style={[styles.crowdLabel, { color: theme.colors.onSurfaceVariant }]}>
-              Tahmini Yoğunluk
-            </Text>
-            <CrowdBadge level={selectedRoute.crowdLevel} />
-          </View>
-        </Surface>
-
-        {selectedRoute.transfers.length > 0 && (
-          <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
-            <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Aktarmalar</Text>
-            {selectedRoute.transfers.map((t, i) => (
-              <View key={i} style={styles.transferRow}>
-                <View style={[styles.transferBadge, { backgroundColor: theme.colors.secondaryContainer }]}>
-                  <Text style={[styles.transferLine, { color: theme.colors.secondary }]}>
-                    {t.lineNumber}
-                  </Text>
-                </View>
-                <View style={styles.transferInfo}>
-                  <Text style={[styles.transferStop, { color: theme.colors.onSurface }]}>
-                    {t.lineName} · {t.boardStop.name}
-                  </Text>
-                  <Text style={[styles.transferWait, { color: theme.colors.onSurfaceVariant }]}>
-                    ~{t.walkMins} dk yürüyüş
-                  </Text>
-                </View>
+            <TouchableOpacity
+              style={StyleSheet.absoluteFill}
+              activeOpacity={0.9}
+              onPress={() => navigation.navigate('RouteMap', { route: selectedRoute })}
+              accessibilityLabel="Haritayı büyüt"
+            >
+              <View style={[styles.mapExpand, { backgroundColor: theme.colors.surface }]}>
+                <MaterialCommunityIcons name="arrow-expand" size={16} color={theme.colors.onSurface} />
               </View>
-            ))}
-          </Surface>
+            </TouchableOpacity>
+          </View>
         )}
 
-        {selectedRoute.confidenceDetail && (
-          <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Güvenilirlik</Text>
-              <Text style={{
-                fontSize: 22,
-                fontWeight: '800',
-                color: selectedRoute.confidenceDetail.score >= 80 ? '#10B981'
-                  : selectedRoute.confidenceDetail.score >= 60 ? '#F59E0B' : '#EF4444',
-              }}>
-                %{selectedRoute.confidenceDetail.score}
-              </Text>
-            </View>
-            {selectedRoute.confidenceDetail.reasons.map((r, i) => (
-              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                <MaterialCommunityIcons name="check-circle-outline" size={14} color={theme.colors.onSurfaceVariant} />
-                <Text style={{ fontSize: 13, color: theme.colors.onSurfaceVariant }}>{r}</Text>
-              </View>
-            ))}
-          </Surface>
+        {selectedRoute.steps && selectedRoute.steps.length > 0 && (
+          <RouteStepsCard
+            steps={selectedRoute.steps}
+            startMins={selectedRoute.departAtMins}
+            originName={origin?.name}
+            destinationName={destination?.name}
+          />
         )}
 
-        <Button
-          mode="outlined"
-          icon="map-outline"
-          onPress={() => navigation.navigate('RouteMap', { route: selectedRoute })}
-          style={styles.mapBtn}
-          contentStyle={{ height: 48 }}
-        >
-          Haritada Gör
-        </Button>
+        <View style={styles.infoChips}>
+          {!isWalk && <CrowdBadge level={selectedRoute.crowdLevel} />}
+          {!isWalk && (
+            <View style={[styles.infoChip, { backgroundColor: theme.colors.surfaceVariant }]}>
+              <MaterialCommunityIcons name="transfer" size={14} color={theme.colors.onSurfaceVariant} />
+              <Text style={[styles.infoChipText, { color: theme.colors.onSurfaceVariant }]}>
+                {selectedRoute.transfers.length === 0 ? 'Aktarmasız' : `${selectedRoute.transfers.length} aktarma`}
+              </Text>
+            </View>
+          )}
+          {selectedRoute.confidenceDetail && (
+            <View style={[styles.infoChip, { backgroundColor: theme.colors.surfaceVariant }]}>
+              <MaterialCommunityIcons
+                name={selectedRoute.confidenceDetail.hasLiveData ? 'access-point' : 'calendar-clock'}
+                size={14}
+                color={selectedRoute.confidenceDetail.hasLiveData ? '#188038' : theme.colors.onSurfaceVariant}
+              />
+              <Text style={[styles.infoChipText, { color: theme.colors.onSurfaceVariant }]}>
+                {selectedRoute.confidenceDetail.hasLiveData ? 'Canlı konum' : 'Tarifeye göre'}
+              </Text>
+            </View>
+          )}
+          {isWalk && (
+            <View style={[styles.infoChip, { backgroundColor: theme.colors.surfaceVariant }]}>
+              <MaterialCommunityIcons name="walk" size={14} color={theme.colors.onSurfaceVariant} />
+              <Text style={[styles.infoChipText, { color: theme.colors.onSurfaceVariant }]}>
+                {((selectedRoute.steps?.[0]?.distanceMeters ?? 0) / 1000).toFixed(1)} km yürüyüş
+              </Text>
+            </View>
+          )}
+        </View>
 
         {comfortScore && (
           <ComfortScoreCard score={comfortScore} compact />
@@ -203,108 +191,77 @@ export function RouteResultScreen({ navigation }: Props) {
           </Surface>
         )}
 
-        {selectedRoute.steps && selectedRoute.steps.length > 0 && (
-          <RouteStepsCard steps={selectedRoute.steps} />
+        {!isWalk && (
+          <>
+            <Button
+              mode="contained"
+              style={styles.startBtn}
+              contentStyle={styles.startBtnContent}
+              icon="navigation"
+              labelStyle={styles.startBtnLabel}
+              onPress={handleStartJourney}
+            >
+              Yolculuğu Başlat
+            </Button>
+            <Button
+              mode="outlined"
+              icon="play-circle"
+              style={{ marginTop: 8, marginHorizontal: 16 }}
+              onPress={() => navigation.navigate('RouteReplay', { route: selectedRoute! })}
+            >
+              Rotayı Oynat
+            </Button>
+          </>
         )}
-
-        <Button
-          mode="contained"
-          style={styles.startBtn}
-          contentStyle={styles.startBtnContent}
-          icon="navigation"
-          labelStyle={styles.startBtnLabel}
-          onPress={handleStartJourney}
-        >
-          Yolculuğu Başlat
-        </Button>
-        <Button
-          mode="outlined"
-          icon="play-circle"
-          style={{ marginTop: 8, marginHorizontal: 16 }}
-          onPress={() => navigation.navigate('RouteReplay', { route: selectedRoute! })}
-        >
-          Rotayı Oynat
-        </Button>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-interface StatItemProps {
-  icon: string;
-  label: string;
-  value: string;
-  color: string;
+function buildShareText(route: Route, originName?: string, destinationName?: string): string {
+  const { items, leaveAt, arriveAt } = buildTimeline(route.steps ?? [], route.departAtMins);
+  const lines = [
+    `🧭 ${originName ?? 'Başlangıç'} → ${destinationName ?? 'Varış'}`,
+    `${hhmm(leaveAt)} çıkış · ${hhmm(arriveAt)} varış (${arriveAt - leaveAt} dk)`,
+    '',
+  ];
+  for (const { step, start, end } of items) {
+    if (step.type === 'walk') {
+      if (step.durationMins > 0) lines.push(`🚶 ${hhmm(start)} ${step.durationMins} dk yürü → ${step.toStopName ?? ''}`);
+    } else {
+      lines.push(`${MODE_EMOJI[step.mode ?? 'bus']} ${hhmm(start)} ${step.boardStop?.name}: ${lineTitle(step.lineNumber ?? '')}${step.headsign ? ` (${step.headsign} yönü)` : ''}`);
+      lines.push(`   ${hhmm(end)} ${step.alightStop?.name} durağında in`);
+    }
+  }
+  lines.push('', 'YolBilen ile planlandı');
+  return lines.join('\n');
 }
 
-function StatItem({ icon, label, value, color }: StatItemProps) {
-  const theme = useTheme();
-  return (
-    <View style={styles.statItem}>
-      <MaterialCommunityIcons name={icon as any} size={20} color={color} />
-      <Text style={[styles.statValue, { color: theme.colors.onSurface }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: theme.colors.onSurfaceVariant }]}>{label}</Text>
-    </View>
-  );
-}
+const MODE_EMOJI: Record<NonNullable<RouteStep['mode']>, string> = {
+  bus: '🚌', metro: '🚇', tram: '🚊', rail: '🚆', ferry: '⛴️',
+};
 
-function RouteStepsCard({ steps }: { steps: RouteStep[] }) {
+function RouteStepsCard({ steps, startMins, originName, destinationName }: {
+  steps: RouteStep[];
+  startMins?: number;
+  originName?: string;
+  destinationName?: string;
+}) {
   const theme = useTheme();
-
+  const { leaveAt, arriveAt } = buildTimeline(steps, startMins);
+  const total = arriveAt - leaveAt;
   return (
     <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
-      <Text style={[styles.sectionTitle, { color: theme.colors.onSurface }]}>Güzergah Adımları</Text>
-      {steps.map((step, i) => (
-        <View key={i}>
-          {i > 0 && <View style={[styles.stepConnector, { backgroundColor: theme.colors.outlineVariant }]} />}
-          {step.type === 'walk' ? (
-            <View style={styles.stepRow}>
-              <View style={[styles.stepIcon, { backgroundColor: theme.colors.secondaryContainer }]}>
-                <MaterialCommunityIcons name="walk" size={18} color={theme.colors.secondary} />
-              </View>
-              <View style={styles.stepText}>
-                <Text style={[styles.stepMain, { color: theme.colors.onSurface }]}>
-                  {step.durationMins} dk yürüyün
-                </Text>
-                {step.toStopName && (
-                  <Text style={[styles.stepSub, { color: theme.colors.onSurfaceVariant }]}>
-                    {step.toStopName}{step.distanceMeters ? ` (${step.distanceMeters} m)` : ''}
-                  </Text>
-                )}
-              </View>
-            </View>
-          ) : (
-            <View>
-              <View style={styles.stepRow}>
-                <View style={[styles.stepIcon, { backgroundColor: theme.colors.primaryContainer }]}>
-                  <MaterialCommunityIcons name="bus" size={18} color={theme.colors.primary} />
-                </View>
-                <View style={styles.stepText}>
-                  <Text style={[styles.stepMain, { color: theme.colors.onSurface }]}>
-                    {step.departureTime && `${step.departureTime} — `}Hat {step.lineNumber}
-                  </Text>
-                  <Text style={[styles.stepSub, { color: theme.colors.onSurfaceVariant }]}>
-                    {step.distanceMeters ? `${(step.distanceMeters / 1000).toFixed(1)} km` : ''}
-                  </Text>
-                </View>
-              </View>
-              <View style={[styles.stopList, { borderLeftColor: theme.colors.primary }]}>
-                <Text style={[styles.stopItem, { color: theme.colors.onSurface, fontWeight: '600' }]}>
-                  {step.boardStop?.name}
-                </Text>
-                {(step.intermediateStops ?? []).map((s, j) => (
-                  <Text key={j} style={[styles.stopItem, { color: theme.colors.onSurfaceVariant }]}>
-                    {s.name}
-                  </Text>
-                ))}
-                <Text style={[styles.stopItem, { color: theme.colors.onSurface, fontWeight: '600' }]}>
-                  {step.alightStop?.name}
-                </Text>
-              </View>
-            </View>
-          )}
-        </View>
-      ))}
+      <View style={styles.planHeader}>
+        <Text style={[styles.planTimes, { color: theme.colors.onSurface }]}>{hhmm(leaveAt)} – {hhmm(arriveAt)}</Text>
+        <Text style={[styles.planTotal, { color: theme.colors.onSurface }]}>
+          {total >= 60 ? `${Math.floor(total / 60)} sa ${total % 60} dk` : `${total} dk`}
+        </Text>
+      </View>
+      <JourneyTimeline steps={steps} startMins={startMins} originName={originName} destinationName={destinationName} />
+      <Text style={[styles.planNote, { color: theme.colors.onSurfaceVariant }]}>
+        Saatler canlı veri ve tarifeye göre tahminidir; birkaç dakika sapabilir.
+      </Text>
     </Surface>
   );
 }
@@ -358,12 +315,14 @@ const styles = StyleSheet.create({
   startBtnLabel: { fontSize: 16, fontWeight: '700' },
   mapBtn: { borderRadius: 12 },
   infoAlert: { borderRadius: 14, padding: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  stepRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  stepConnector: { width: 2, height: 12, marginLeft: 19, marginVertical: 2 },
-  stepIcon: { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
-  stepText: { flex: 1, gap: 2, paddingTop: 2 },
-  stepMain: { fontSize: 14, fontWeight: '600' },
-  stepSub: { fontSize: 12, lineHeight: 18 },
-  stopList: { marginLeft: 50, marginTop: 6, paddingLeft: 12, borderLeftWidth: 2, gap: 2 },
-  stopItem: { fontSize: 12, lineHeight: 20 },
+  mapPreview: { height: 200, borderRadius: 16, overflow: 'hidden' },
+  mapWeb: { flex: 1 },
+  mapExpand: { position: 'absolute', top: 10, right: 10, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', elevation: 3 },
+  infoChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
+  infoChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14 },
+  infoChipText: { fontSize: 12, fontWeight: '600' },
+  planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
+  planTimes: { fontSize: 22, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  planTotal: { fontSize: 16, fontWeight: '600' },
+  planNote: { fontSize: 12 },
 });

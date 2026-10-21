@@ -6,6 +6,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isMember() {
+      return isAuthenticated() && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function unchangedOrBumped(k) {
+      return resource == null
+        ? (!(k in request.resource.data) || request.resource.data[k] == 1)
+        : (request.resource.data.get(k, 0) == resource.data.get(k, 0)
+           || request.resource.data.get(k, 0) == resource.data.get(k, 0) + 1);
+    }
+
+    function inScoreRange(k) {
+      return request.resource.data[k] is number && request.resource.data[k] >= 0 && request.resource.data[k] <= 10;
+    }
+
     function isAdmin() {
       return isAuthenticated() && (
         request.auth.token.email_verified == true && (
@@ -29,20 +44,38 @@ service cloud.firestore {
     // Geri bildirim: giriş yapmış herkes okuyabilir, sadece kendi adına gönderebilir
     match /feedbacks/{feedbackId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow create: if isMember() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if false;
     }
 
-    // Hat istatistikleri: her feedback gönderiminde increment ile güncelleniyor (client-side aggregate)
+    // Hat istatistikleri: her geri bildirimde sayaçlar en fazla 1 artabilir, misafir yazamaz
     match /line_stats/{lineNumber} {
       allow read: if isAuthenticated();
-      allow create, update: if isAuthenticated();
+      allow create, update: if isMember()
+        && request.resource.data.keys().hasOnly([
+          'lineNumber', 'totalFeedbacks', 'lastUpdated',
+          'ac_good', 'ac_medium', 'ac_broken',
+          'comfort_comfortable', 'comfort_medium', 'comfort_uncomfortable',
+          'crowd_seated', 'crowd_standing', 'crowd_very_crowded',
+          'temp_cool', 'temp_normal', 'temp_hot'])
+        && request.resource.data.totalFeedbacks == (resource == null ? 0 : resource.data.get('totalFeedbacks', 0)) + 1
+        && unchangedOrBumped('ac_good') && unchangedOrBumped('ac_medium') && unchangedOrBumped('ac_broken')
+        && unchangedOrBumped('comfort_comfortable') && unchangedOrBumped('comfort_medium') && unchangedOrBumped('comfort_uncomfortable')
+        && unchangedOrBumped('crowd_seated') && unchangedOrBumped('crowd_standing') && unchangedOrBumped('crowd_very_crowded')
+        && unchangedOrBumped('temp_cool') && unchangedOrBumped('temp_normal') && unchangedOrBumped('temp_hot');
       allow delete: if isAdmin();
     }
 
-    // Otobüs kartı (plaka bazlı) kalabalık raporları
+    // Otobüs kartı (plaka bazlı): rapor sayısı 1 artar, puanlar 0-10 aralığında kalır, misafir yazamaz
     match /bus_cards/{plate} {
-      allow read, create, update: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow create, update: if isMember()
+        && request.resource.data.keys().hasOnly([
+          'plate', 'totalReports', 'climateScore', 'crowdScore', 'comfortScore',
+          'satisfactionScore', 'overallScore', 'updatedAt'])
+        && request.resource.data.totalReports == (resource == null ? 0 : resource.data.totalReports) + 1
+        && inScoreRange('climateScore') && inScoreRange('crowdScore') && inScoreRange('comfortScore')
+        && inScoreRange('satisfactionScore') && inScoreRange('overallScore');
       allow delete: if isAdmin();
     }
 
@@ -62,9 +95,11 @@ service cloud.firestore {
       allow read: if isAuthenticated();
       // Uyarıyı yalnızca admin yayınlar (uygulamada form sadece admine görünüyor)
       allow create: if isAdmin() && request.resource.data.userId == request.auth.uid;
-      // Kullanıcılar yalnızca upvote sayacını 1 artırabilir
+      // Her kullanıcı bir uyarıya yalnızca bir kez oy verebilir
       allow update: if isAuthenticated()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['upvotes', 'upvoters'])
+        && !(request.auth.uid in resource.data.get('upvoters', []))
+        && request.resource.data.upvoters == resource.data.get('upvoters', []).concat([request.auth.uid])
         && request.resource.data.upvotes == resource.data.upvotes + 1;
       allow delete: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
     }

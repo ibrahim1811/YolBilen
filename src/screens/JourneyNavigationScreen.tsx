@@ -12,6 +12,7 @@ import { saveJourney } from '../services/firebase/journeyService';
 import { startAlightTracking, stopAlightTracking } from '../services/background/alightTask';
 import { useAppStore } from '../store/useAppStore';
 import { GamePlayModal } from '../components/games/GamePlayModal';
+import { getLineColor, getLineMode, lineTitle, TRANSIT_MODE_ICON } from '../data/gtfsData';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'JourneyNavigation'>;
 type Phase = 'walk' | 'waiting' | 'on_bus' | 'arrived';
@@ -32,33 +33,44 @@ function distMeters(aLat: number, aLon: number, bLat: number, bLon: number): num
 }
 
 function buildNavHtml(steps?: RouteStep[], boarding?: Stop | null, alighting?: Stop | null): string {
-  const transitStep = steps?.find(s => s.type === 'transit');
-  const midStops = transitStep?.intermediateStops ?? [];
+  const transitSteps = (steps ?? []).filter(s => s.type === 'transit');
+  const midStops = transitSteps.flatMap(s => s.intermediateStops ?? []);
 
-  const intermediateJs = midStops
-    .map(s => `L.circleMarker([${s.latitude},${s.longitude}],{radius:5,color:'#1A73E8',fillColor:'#1A73E8',fillOpacity:0.8,weight:2}).bindPopup(${JSON.stringify(s.name)}).addTo(map);`)
+  const intermediateJs = transitSteps
+    .flatMap(t => {
+      const color = getLineColor(t.lineNumber ?? '') ?? '#1A73E8';
+      return (t.intermediateStops ?? []).map(s =>
+        `L.circleMarker([${s.latitude},${s.longitude}],{radius:5,color:'${color}',fillColor:'${color}',fillOpacity:0.8,weight:2}).bindPopup(${JSON.stringify(s.name)}).addTo(map);`);
+    })
     .join('\n');
 
-  let walkLinesJs = '';
-  if (transitStep?.boardStop && transitStep?.alightStop && boarding && alighting) {
-    const b = transitStep.boardStop;
-    const a = transitStep.alightStop;
-    walkLinesJs =
-      `L.polyline([[${boarding.latitude},${boarding.longitude}],[${b.latitude},${b.longitude}]],{color:'#888',weight:2,dashArray:'5,8'}).addTo(map);\n` +
-      `L.polyline([[${a.latitude},${a.longitude}],[${alighting.latitude},${alighting.longitude}]],{color:'#888',weight:2,dashArray:'5,8'}).addTo(map);`;
-  }
+  // Aktarma yürüyüşleri: bir bacağın iniş durağından sonrakinin biniş durağına
+  const walkLinesJs = transitSteps.slice(1)
+    .map((t, i) => {
+      const a = transitSteps[i].alightStop;
+      const b = t.boardStop;
+      if (!a || !b) return '';
+      return `L.polyline([[${a.latitude},${a.longitude}],[${b.latitude},${b.longitude}]],{color:'#888',weight:3,dashArray:'5,8'}).addTo(map);` +
+        `L.marker([${b.latitude},${b.longitude}],{icon:orangeIcon}).bindPopup(${JSON.stringify('Aktarma: ' + b.name)}).addTo(map);`;
+    })
+    .join('\n');
 
-  let polylineJs = '';
-  if (transitStep?.boardStop && transitStep?.alightStop) {
-    const pts = [
-      [transitStep.boardStop.latitude, transitStep.boardStop.longitude],
-      ...midStops.map(s => [s.latitude, s.longitude]),
-      [transitStep.alightStop.latitude, transitStep.alightStop.longitude],
-    ];
-    polylineJs = `L.polyline(${JSON.stringify(pts)},{color:'#1A73E8',weight:4}).addTo(map);`;
-  } else if (boarding && alighting) {
+  let polylineJs = transitSteps
+    .filter(t => t.boardStop && t.alightStop)
+    .map(t => {
+      const pts = [
+        [t.boardStop!.latitude, t.boardStop!.longitude],
+        ...(t.intermediateStops ?? []).map(s => [s.latitude, s.longitude]),
+        [t.alightStop!.latitude, t.alightStop!.longitude],
+      ];
+      return `L.polyline(${JSON.stringify(pts)},{color:'${getLineColor(t.lineNumber ?? '') ?? '#1A73E8'}',weight:5}).addTo(map);`;
+    })
+    .join('\n');
+  if (!polylineJs && boarding && alighting) {
     polylineJs = `L.polyline([[${boarding.latitude},${boarding.longitude}],[${alighting.latitude},${alighting.longitude}]],{color:'#1A73E8',weight:4,dashArray:'8,4'}).addTo(map);`;
   }
+  const transitStep = transitSteps[0];
+  const lastTransit = transitSteps[transitSteps.length - 1];
 
   const boardingJs = boarding
     ? `L.marker([${boarding.latitude},${boarding.longitude}],{icon:greenIcon}).bindPopup(${JSON.stringify('Biniş: ' + boarding.name)}).addTo(map);`
@@ -70,7 +82,7 @@ function buildNavHtml(steps?: RouteStep[], boarding?: Stop | null, alighting?: S
   const allPts: [number, number][] = [
     ...(transitStep?.boardStop ? [[transitStep.boardStop.latitude, transitStep.boardStop.longitude] as [number, number]] : []),
     ...midStops.map(s => [s.latitude, s.longitude] as [number, number]),
-    ...(transitStep?.alightStop ? [[transitStep.alightStop.latitude, transitStep.alightStop.longitude] as [number, number]] : []),
+    ...(lastTransit?.alightStop ? [[lastTransit.alightStop.latitude, lastTransit.alightStop.longitude] as [number, number]] : []),
     ...(boarding ? [[boarding.latitude, boarding.longitude] as [number, number]] : []),
     ...(alighting ? [[alighting.latitude, alighting.longitude] as [number, number]] : []),
   ];
@@ -96,6 +108,7 @@ var map=L.map('map',{zoomControl:false});
 L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap &copy; CARTO',maxZoom:19}).addTo(map);
 var greenIcon=L.divIcon({html:'<div style="background:#34A853;border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 2px 6px rgba(0,0,0,0.4)"></div>',iconSize:[18,18],iconAnchor:[9,9],className:''});
 var redIcon=L.divIcon({html:'<div style="background:#EA4335;border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 2px 6px rgba(0,0,0,0.4)"></div>',iconSize:[18,18],iconAnchor:[9,9],className:''});
+var orangeIcon=L.divIcon({html:'<div style="background:#FB8C00;border:3px solid white;border-radius:50%;width:16px;height:16px;box-shadow:0 2px 6px rgba(0,0,0,0.4)"></div>',iconSize:[16,16],iconAnchor:[8,8],className:''});
 var userMarker=null;
 ${intermediateJs}
 ${walkLinesJs}
@@ -161,12 +174,12 @@ function WaitingPanel({
             Duraktasın
           </Text>
           <Text style={[styles.phaseSub, { color: theme.colors.onSurfaceVariant }]}>
-            Hat {lineNumber} · ~{nextArrival} dk sonra geliyor
+            {lineTitle(lineNumber)} · ~{nextArrival} dk sonra geliyor
           </Text>
         </View>
       </View>
-      <Button mode="contained" icon="bus" onPress={onManualBoard} style={styles.phaseBtn}>
-        Otobüse Bindim
+      <Button mode="contained" icon={TRANSIT_MODE_ICON[getLineMode(lineNumber)]} onPress={onManualBoard} style={styles.phaseBtn}>
+        Bindim
       </Button>
     </View>
   );
@@ -193,11 +206,11 @@ function OnBusPanel({
     <View style={styles.phaseContainer}>
       <View style={styles.phaseHeader}>
         <View style={[styles.phaseIconBg, { backgroundColor: theme.colors.primaryContainer }]}>
-          <MaterialCommunityIcons name="bus" size={28} color={theme.colors.primary} />
+          <MaterialCommunityIcons name={TRANSIT_MODE_ICON[getLineMode(lineNumber)]} size={28} color={theme.colors.primary} />
         </View>
         <View style={styles.phaseTextGroup}>
           <Text style={[styles.phaseTitle, { color: theme.colors.onSurface }]}>
-            Hat {lineNumber} · {stopsLeft} durak kaldı
+            {lineTitle(lineNumber)} · {stopsLeft} durak kaldı
           </Text>
           <Text style={[styles.phaseSub, { color: theme.colors.onSurfaceVariant }]}>
             İniş: {alightStopName}
@@ -291,22 +304,33 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const transitStep = route.steps?.find(s => s.type === 'transit');
-  const walkStep = route.steps?.find(s => s.type === 'walk');
+  // Aktarmalı rotalarda her araç ayrı bir bacak; ekran sırayla ilerler.
+  const allSteps = route.steps ?? [];
+  const transitSteps = useMemo(() => allSteps.filter(s => s.type === 'transit'), [route]);
+  const [legIdx, setLegIdx] = useState(0);
+  const legIdxRef = useRef(0);
+  const transitStep = transitSteps[legIdx];
+  const isLastLeg = legIdx >= transitSteps.length - 1;
+  const legLineNumber = transitStep?.lineNumber ?? route.lineNumber;
+  const stepIdx = transitStep ? allSteps.indexOf(transitStep) : -1;
+  const walkStep = stepIdx > 0 && allSteps[stepIdx - 1].type === 'walk' ? allSteps[stepIdx - 1] : undefined;
 
-  const boarding: Stop | null = route.boardingStop
-    ? { name: route.boardingStop.name, latitude: route.boardingStop.latitude, longitude: route.boardingStop.longitude }
-    : transitStep?.boardStop ?? null;
+  const boarding: Stop | null = transitStep?.boardStop
+    ?? (route.boardingStop ? { name: route.boardingStop.name, latitude: route.boardingStop.latitude, longitude: route.boardingStop.longitude } : null);
 
-  const alighting: Stop | null = route.alightingStop
-    ? { name: route.alightingStop.name, latitude: route.alightingStop.latitude, longitude: route.alightingStop.longitude }
-    : transitStep?.alightStop ?? null;
+  const alighting: Stop | null = transitStep?.alightStop
+    ?? (route.alightingStop ? { name: route.alightingStop.name, latitude: route.alightingStop.latitude, longitude: route.alightingStop.longitude } : null);
 
   const allStops: Stop[] = [
     ...(transitStep?.boardStop ? [transitStep.boardStop] : []),
     ...(transitStep?.intermediateStops ?? []),
     ...(transitStep?.alightStop ? [transitStep.alightStop] : []),
   ];
+
+  const nowMinsForLeg = new Date().getHours() * 60 + new Date().getMinutes();
+  const legNextArrival = legIdx === 0 || transitStep?.departureMins === undefined
+    ? route.nextArrival
+    : Math.max(0, transitStep.departureMins - nowMinsForLeg);
 
   const [phase, setPhase] = useState<Phase>('walk');
   const [nearestStopIdx, setNearestStopIdx] = useState(0);
@@ -315,9 +339,30 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
   const notifiedAlightRef = useRef(false);
   const boardingPromptedRef = useRef(false);
   const lastLocationRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  // Konum dinleyicisi bir kez kurulur; güncel bacağı ref üzerinden okur.
+  const legRef = useRef({ boarding, alighting, allStops, isLastLeg, lineNumber: legLineNumber });
+  legRef.current = { boarding, alighting, allStops, isLastLeg, lineNumber: legLineNumber };
+
+  function finishLeg() {
+    if (!legRef.current.isLastLeg) {
+      const next = legIdxRef.current + 1;
+      legIdxRef.current = next;
+      setLegIdx(next);
+      notifiedAlightRef.current = false;
+      boardingPromptedRef.current = false;
+      setNearestStopIdx(0);
+      setPhase('walk');
+      phaseRef.current = 'walk';
+      return;
+    }
+    setPhase('arrived');
+    phaseRef.current = 'arrived';
+  }
+  const finishLegRef = useRef(finishLeg);
+  finishLegRef.current = finishLeg;
 
   const html = useMemo(
-    () => buildNavHtml(route.steps, boarding, alighting),
+    () => buildNavHtml(route.steps, boarding, transitSteps[transitSteps.length - 1]?.alightStop ?? alighting),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
   );
@@ -328,10 +373,32 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
 
   // Otobüsteyken inme durağı arka planda da izlenir (telefon kilitliyken bildirim gelsin diye)
   const bgTrackingRef = useRef(false);
+  const journeySavedRef = useRef(false);
   useEffect(() => {
     if (phase === 'arrived') {
       bgTrackingRef.current = false;
       stopAlightTracking().catch(e => console.warn('[JourneyNavigation] arka plan takibi durdurulamadı:', e));
+      if (user && !user.isGuest && !journeySavedRef.current) {
+        journeySavedRef.current = true;
+        const now = new Date();
+        const totalMeters = route.steps?.reduce((s, st) => s + (st.distanceMeters ?? 0), 0) ?? 0;
+        saveJourney({
+          userId: user.uid,
+          lineNumber: route.lineNumber,
+          lineName: route.lineName,
+          originName: transitSteps[0]?.boardStop?.name ?? boarding?.name ?? '',
+          destinationName: transitSteps[transitSteps.length - 1]?.alightStop?.name ?? alighting?.name ?? '',
+          durationMins: route.estimatedDuration,
+          distanceKm: Math.round((totalMeters / 1000) * 10) / 10,
+          timestamp: now,
+          dayOfWeek: now.getDay(),
+          hourOfDay: now.getHours(),
+        }).catch(e => {
+          journeySavedRef.current = false;
+          console.warn('[JourneyNavigation] yolculuk kaydedilemedi:', e);
+          Alert.alert('Yolculuk kaydedilemedi', 'İnternet bağlantını kontrol et.');
+        });
+      }
       return;
     }
     if (phase !== 'on_bus' || !alighting) return;
@@ -350,7 +417,7 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
       .catch(e => console.warn('[JourneyNavigation] arka plan takibi başlatılamadı:', e));
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase]);
+  }, [phase, legIdx]);
 
   useEffect(() => () => {
     stopAlightTracking().catch(e => console.warn('[JourneyNavigation] arka plan takibi durdurulamadı:', e));
@@ -379,6 +446,7 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
           );
 
           const cur = phaseRef.current;
+          const { boarding, alighting, allStops, lineNumber } = legRef.current;
 
           if (cur === 'walk' && boarding) {
             if (distMeters(latitude, longitude, boarding.latitude, boarding.longitude) < BOARD_RADIUS_M) {
@@ -391,7 +459,7 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
             boardingPromptedRef.current = true;
             Alert.alert(
               'Otobüse bindin mi?',
-              `Hat ${route.lineNumber} otobüsüne bindiğini tespit ettik.`,
+              `${lineTitle(lineNumber)} aracına bindiğini tespit ettik.`,
               [
                 {
                   text: 'Evet, bindim!',
@@ -439,8 +507,7 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
 
             if (alighting) {
               if (distMeters(latitude, longitude, alighting.latitude, alighting.longitude) < 80) {
-                setPhase('arrived');
-                phaseRef.current = 'arrived';
+                finishLegRef.current();
               }
             }
           }
@@ -490,7 +557,10 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['top']}>
       <Appbar.Header style={[styles.appbar, { backgroundColor: theme.colors.surface }]} elevated={false}>
-        <Appbar.Content title={`Hat ${route.lineNumber}`} titleStyle={styles.appbarTitle} />
+        <Appbar.Content
+          title={transitSteps.length > 1 ? `${lineTitle(legLineNumber)} · ${legIdx + 1}/${transitSteps.length}` : lineTitle(legLineNumber)}
+          titleStyle={styles.appbarTitle}
+        />
         <Appbar.Action icon="close-circle-outline" onPress={handleCancel} />
       </Appbar.Header>
       <WebView
@@ -522,8 +592,8 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
 
         {phase === 'walk' && (
           <WalkPanel
-            walkMins={walkStep?.durationMins ?? 5}
-            boardStopName={boarding?.name ?? ''}
+            walkMins={walkStep?.durationMins ?? (legIdx > 0 ? 1 : 5)}
+            boardStopName={legIdx > 0 ? `Aktarma: ${boarding?.name ?? ''} (${lineTitle(legLineNumber)})` : boarding?.name ?? ''}
             onManualArrive={() => {
               setPhase('waiting');
               phaseRef.current = 'waiting';
@@ -532,8 +602,8 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
         )}
         {phase === 'waiting' && (
           <WaitingPanel
-            lineNumber={route.lineNumber}
-            nextArrival={route.nextArrival}
+            lineNumber={legLineNumber}
+            nextArrival={legNextArrival}
             onManualBoard={() => {
               setPhase('on_bus');
               phaseRef.current = 'on_bus';
@@ -542,41 +612,17 @@ export function JourneyNavigationScreen({ navigation, route: navRoute }: Props) 
         )}
         {phase === 'on_bus' && (
           <OnBusPanel
-            lineNumber={route.lineNumber}
+            lineNumber={legLineNumber}
             allStops={allStops}
             nearestIdx={nearestStopIdx}
-            alightStopName={alighting?.name ?? ''}
-            onManualAlight={() => {
-              setPhase('arrived');
-              phaseRef.current = 'arrived';
-            }}
+            alightStopName={isLastLeg ? alighting?.name ?? '' : `${alighting?.name ?? ''} (aktarma)`}
+            onManualAlight={finishLeg}
           />
         )}
         {phase === 'arrived' && (
           <ArrivedPanel
             alightStopName={alighting?.name ?? ''}
-            onDone={() => {
-              if (user && !user.isGuest) {
-                const now = new Date();
-                const totalMeters = route.steps?.reduce((s, st) => s + (st.distanceMeters ?? 0), 0) ?? 0;
-                saveJourney({
-                  userId: user.uid,
-                  lineNumber: route.lineNumber,
-                  lineName: route.lineName,
-                  originName: boarding?.name ?? '',
-                  destinationName: alighting?.name ?? '',
-                  durationMins: route.estimatedDuration,
-                  distanceKm: Math.round((totalMeters / 1000) * 10) / 10,
-                  timestamp: now,
-                  dayOfWeek: now.getDay(),
-                  hourOfDay: now.getHours(),
-                }).catch(e => {
-                  console.warn('[JourneyNavigation] yolculuk kaydedilemedi:', e);
-                  Alert.alert('Yolculuk kaydedilemedi', 'İnternet bağlantını kontrol et.');
-                });
-              }
-              navigation.popToTop();
-            }}
+            onDone={() => navigation.popToTop()}
           />
         )}
       </Surface>

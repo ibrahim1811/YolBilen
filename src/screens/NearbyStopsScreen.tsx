@@ -4,7 +4,7 @@ import { Text, Surface, useTheme, Appbar, Chip, TouchableRipple } from 'react-na
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { getStops, getStopRouteDirs, getRouteName } from '../data/gtfsData';
+import { getStops, getStopRouteDirs, getRouteName, getLineMode, stopMode, TRANSIT_MODE_ICON } from '../data/gtfsData';
 import { minsToArrivalLabel } from '../services/firebase/scheduleService';
 import { getApproachingBuses, resolveIztekStopId, estimateArrivalMins, isWaitingAtTerminal } from '../services/iztek/iztekService';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -139,7 +139,7 @@ export function NearbyStopsScreen({ navigation }: Props) {
               <Surface style={[styles.stopCard, { backgroundColor: theme.colors.surface }]} elevation={1}>
                 <View style={styles.stopHeader}>
                   <View style={[styles.stopIcon, { backgroundColor: theme.colors.primaryContainer }]}>
-                    <MaterialCommunityIcons name="bus-stop" size={20} color={theme.colors.primary} />
+                    <MaterialCommunityIcons name={stopMode(item.id) === 'bus' ? 'bus-stop' : TRANSIT_MODE_ICON[stopMode(item.id)]} size={20} color={theme.colors.primary} />
                   </View>
                   <View style={styles.stopInfo}>
                     <Text style={[styles.stopName, { color: theme.colors.onSurface }]} numberOfLines={1}>
@@ -155,12 +155,12 @@ export function NearbyStopsScreen({ navigation }: Props) {
                 {item.nextArrivals.length > 0 && (
                   <>
                     <Text style={[styles.arrivalsLabel, { color: theme.colors.onSurfaceVariant }]}>
-                      Yaklaşan Otobüsler
+                      Yaklaşan Seferler
                     </Text>
                     <View style={styles.arrivalsRow}>
                       {item.nextArrivals.map(a => (
                         <View key={a.line} style={[styles.arrivalChip, { backgroundColor: theme.colors.primaryContainer }]}>
-                          <MaterialCommunityIcons name="bus" size={13} color={theme.colors.primary} />
+                          <MaterialCommunityIcons name={TRANSIT_MODE_ICON[getLineMode(a.line)]} size={13} color={theme.colors.primary} />
                           <Text style={[styles.arrivalLine, { color: theme.colors.primary }]}>{a.line}</Text>
                           <Text style={[styles.arrivalMins, { color: theme.colors.onSurfaceVariant }]}>
                             {minsToArrivalLabel(a.mins)}

@@ -4,16 +4,18 @@ import { Appbar, Text, useTheme } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import WebView from 'react-native-webview';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useIsFocused } from '@react-navigation/native';
 import type { RootStackParamList, RouteStep } from '../types';
 import { getLineBusPositions, type BusPosition } from '../services/iztek/iztekService';
 import { analyzeSunExposureAlongRoute } from '../services/sun/sunAnalysis';
 import type { SunAnalysis } from '../types';
+import { getLineColor, getLineMode, lineTitle } from '../data/gtfsData';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RouteMap'>;
 
 const IZMIR_CENTER = [38.4192, 27.1287];
 
-function buildMapHtml(params: {
+export function buildMapHtml(params: {
   boarding: { latitude: number; longitude: number; name: string } | null;
   alighting: { latitude: number; longitude: number; name: string } | null;
   center: [number, number];
@@ -38,11 +40,12 @@ function buildMapHtml(params: {
 
   // Yürüyüş segmentleri — gri kesikli
   let walkLinesJs = '';
-  if (boardStop && alightStop && boarding && alighting) {
+  const lastAlightStop = transitSteps[transitSteps.length - 1]?.alightStop ?? null;
+  if (boardStop && lastAlightStop && boarding && alighting) {
     walkLinesJs =
       `L.polyline([[${boarding.latitude},${boarding.longitude}],[${boardStop.latitude},${boardStop.longitude}]],` +
       `{color:'#757575',weight:3,dashArray:'6,8',opacity:0.7}).addTo(map);\n` +
-      `L.polyline([[${alightStop.latitude},${alightStop.longitude}],[${alighting.latitude},${alighting.longitude}]],` +
+      `L.polyline([[${lastAlightStop.latitude},${lastAlightStop.longitude}],[${alighting.latitude},${alighting.longitude}]],` +
       `{color:'#757575',weight:3,dashArray:'6,8',opacity:0.7}).addTo(map);`;
   }
 
@@ -60,27 +63,36 @@ function buildMapHtml(params: {
       : [];
 
   const routePolylineJs = transitCoords.length >= 2
-    ? `L.polyline(${JSON.stringify(transitCoords)},{color:'#1A73E8',weight:5,opacity:0.9,lineJoin:'round'}).addTo(map);`
+    ? `L.polyline(${JSON.stringify(transitCoords)},{color:'${getLineColor(transitStep?.lineNumber ?? '') ?? '#1A73E8'}',weight:5,opacity:0.9,lineJoin:'round'}).addTo(map);`
     : '';
 
-  // İkinci transit segment — aktarmalı rota (pembe)
-  const transit2 = transitSteps[1] ?? null;
-  const transit2Coords: [number, number][] = transit2?.boardStop && transit2?.alightStop
-    ? [
-        [transit2.boardStop.latitude, transit2.boardStop.longitude],
-        ...(transit2.intermediateStops ?? []).map(s => [s.latitude, s.longitude] as [number, number]),
-        [transit2.alightStop.latitude, transit2.alightStop.longitude],
-      ]
-    : [];
-  const route2PolylineJs = transit2Coords.length >= 2
-    ? `L.polyline(${JSON.stringify(transit2Coords)},{color:'#E91E63',weight:5,opacity:0.9,lineJoin:'round'}).addTo(map);`
-    : '';
-  const intermediate2Js = (transit2?.intermediateStops ?? [])
-    .map(s =>
+  // Aktarmalı rotada sonraki bacaklar — her biri hattın kendi renginde (yoksa pembe/mor sırayla)
+  const LEG_FALLBACK_COLORS = ['#E91E63', '#9C27B0', '#00897B'];
+  const extraLegCoords: [number, number][] = [];
+  const route2PolylineJs = transitSteps.slice(1).map((t, i) => {
+    if (!t.boardStop || !t.alightStop) return '';
+    const color = getLineColor(t.lineNumber ?? '') ?? LEG_FALLBACK_COLORS[i % LEG_FALLBACK_COLORS.length];
+    const coords: [number, number][] = [
+      [t.boardStop.latitude, t.boardStop.longitude],
+      ...(t.intermediateStops ?? []).map(s => [s.latitude, s.longitude] as [number, number]),
+      [t.alightStop.latitude, t.alightStop.longitude],
+    ];
+    extraLegCoords.push(...coords);
+    const prevAlight = transitSteps[i].alightStop;
+    const transferWalk = prevAlight
+      ? `L.polyline([[${prevAlight.latitude},${prevAlight.longitude}],[${t.boardStop.latitude},${t.boardStop.longitude}]],{color:'#757575',weight:3,dashArray:'6,8',opacity:0.7}).addTo(map);`
+      : '';
+    return `${transferWalk}L.polyline(${JSON.stringify(coords)},{color:'${color}',weight:5,opacity:0.9,lineJoin:'round'}).addTo(map);` +
+      `L.circleMarker([${t.boardStop.latitude},${t.boardStop.longitude}],{radius:9,color:'#FB8C00',fillColor:'#FB8C00',fillOpacity:1,weight:3}).bindPopup(${JSON.stringify('🔁 Aktarma: ' + t.boardStop.name + ' · ' + lineTitle(t.lineNumber ?? ''))}).addTo(map);`;
+  }).join('\n');
+  const intermediate2Js = transitSteps.slice(1).flatMap((t, i) => {
+    const color = getLineColor(t.lineNumber ?? '') ?? LEG_FALLBACK_COLORS[i % LEG_FALLBACK_COLORS.length];
+    return (t.intermediateStops ?? []).map(s =>
       `L.circleMarker([${s.latitude},${s.longitude}],` +
-      `{radius:5,color:'#E91E63',fillColor:'#E91E63',fillOpacity:0.7,weight:2})` +
-      `.bindPopup(${JSON.stringify(s.name)}).addTo(map);`
-    ).join('\n');
+      `{radius:5,color:'${color}',fillColor:'${color}',fillOpacity:0.7,weight:2})` +
+      `.bindPopup(${JSON.stringify(s.name)}).addTo(map);`);
+  }).join('\n');
+  const finalAlight = transitSteps[transitSteps.length - 1]?.alightStop ?? alightStop;
 
   // Canlı otobüs marker'ları
   const busMarkersJs = busPositions.map(b => {
@@ -101,10 +113,10 @@ function buildMapHtml(params: {
     : '';
 
   // GTFS iniş durağı — kırmızı çember
-  const alightStopJs = alightStop
-    ? `L.circleMarker([${alightStop.latitude},${alightStop.longitude}],` +
+  const alightStopJs = finalAlight
+    ? `L.circleMarker([${finalAlight.latitude},${finalAlight.longitude}],` +
       `{radius:10,color:'#EA4335',fillColor:'#EA4335',fillOpacity:1,weight:3})` +
-      `.bindPopup(${JSON.stringify('🔴 İniş Durağı: ' + alightStop.name)}).addTo(map);`
+      `.bindPopup(${JSON.stringify('🔴 İniş Durağı: ' + finalAlight.name)}).addTo(map);`
     : '';
 
   // Kullanıcı GPS biniş noktası — mavi pin
@@ -123,6 +135,7 @@ function buildMapHtml(params: {
     ...(boarding ? [[boarding.latitude, boarding.longitude] as [number, number]] : []),
     ...(alighting ? [[alighting.latitude, alighting.longitude] as [number, number]] : []),
     ...transitCoords,
+    ...extraLegCoords,
   ];
   const boundsJs = allPts.length > 1
     ? `map.fitBounds(${JSON.stringify(allPts)},{padding:[60,60]});`
@@ -176,6 +189,7 @@ export function RouteMapScreen({ navigation, route: navRoute }: Props) {
   const { route } = navRoute.params;
   const boarding = route.boardingStop ?? null;
   const alighting = route.alightingStop ?? null;
+  const isFocused = useIsFocused();
   const [busPositions, setBusPositions] = React.useState<BusPosition[]>([]);
   const [liveSunAnalysis, setLiveSunAnalysis] = React.useState<SunAnalysis | null>(null);
 
@@ -212,10 +226,12 @@ export function RouteMapScreen({ navigation, route: navRoute }: Props) {
         setLiveSunAnalysis(analyzeSunExposureAlongRoute(waypoints, new Date()));
       }
     }
+    // Canlı araç konumu yalnızca ESHOT otobüsleri için var
+    if (!isFocused || getLineMode(route.lineNumber) !== 'bus' || route.isWalkOnly) return () => { cancelled = true; };
     fetchBuses();
     const interval = setInterval(fetchBuses, 30_000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [route.lineNumber]);
+  }, [route.lineNumber, isFocused]);
 
   const transitStep = routeTransitStep;
   const center: [number, number] = transitStep?.boardStop
@@ -241,7 +257,7 @@ export function RouteMapScreen({ navigation, route: navRoute }: Props) {
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]} edges={['top']}>
       <Appbar.Header elevated>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
-        <Appbar.Content title={`${route.lineNumber} Hattı`} subtitle={route.lineName} />
+        <Appbar.Content title={route.transfers.length > 0 ? 'Rota Haritası' : lineTitle(route.lineNumber)} subtitle={route.lineName} />
       </Appbar.Header>
 
       <WebView

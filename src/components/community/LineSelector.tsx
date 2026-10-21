@@ -28,6 +28,7 @@ export function LineSelectorModal({ visible, onDismiss, onSelect }: Props) {
       <Modal
         visible={visible}
         onDismiss={onDismiss}
+        style={styles.modalWrap}
         contentContainerStyle={[styles.modal, { backgroundColor: theme.colors.surface }]}
       >
         <Text style={[styles.title, { color: theme.colors.onSurface }]}>Hat Seç</Text>
@@ -65,7 +66,8 @@ export function LineSelectorModal({ visible, onDismiss, onSelect }: Props) {
 }
 
 const styles = StyleSheet.create({
-  modal: { margin: 20, borderRadius: 20, padding: 20, maxHeight: '75%' },
+  modalWrap: { justifyContent: 'flex-start' },
+  modal: { marginHorizontal: 16, marginTop: 56, borderRadius: 20, padding: 20, maxHeight: '75%' },
   title: { fontSize: 18, fontWeight: '700', marginBottom: 14 },
   search: { borderRadius: 12, marginBottom: 12 },
   list: { maxHeight: 400 },

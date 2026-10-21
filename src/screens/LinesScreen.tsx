@@ -8,7 +8,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types';
-import { getAllLines, getStops } from '../data/gtfsData';
+import { getAllLines, getStops, getLineColor, getLineMode, TRANSIT_MODE_ICON } from '../data/gtfsData';
 import type { IzmirStop } from '../data/gtfsData';
 import { normalizeSearch } from '../utils/searchText';
 
@@ -71,8 +71,12 @@ export function LinesScreen() {
     return (
       <TouchableOpacity onPress={() => navigation.navigate('LineDetail', { lineNumber: item.lineNum, lineName: item.name })}>
         <Surface style={[styles.card, { backgroundColor: theme.colors.surface }]} elevation={1}>
-          <View style={[styles.badge, { backgroundColor: theme.colors.primaryContainer }]}>
-            <Text style={[styles.badgeText, { color: theme.colors.primary }]}>{item.lineNum}</Text>
+          <View style={[styles.badge, { backgroundColor: getLineColor(item.lineNum) ?? theme.colors.primaryContainer }]}>
+            {getLineMode(item.lineNum) === 'bus' ? (
+              <Text style={[styles.badgeText, { color: theme.colors.primary }]}>{item.lineNum}</Text>
+            ) : (
+              <MaterialCommunityIcons name={TRANSIT_MODE_ICON[getLineMode(item.lineNum)]} size={22} color="#FFF" />
+            )}
           </View>
           <Text style={[styles.lineName, { color: theme.colors.onSurface }]} numberOfLines={1}>
             {item.name}

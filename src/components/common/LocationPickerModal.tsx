@@ -4,6 +4,7 @@ import { Text, Portal, Modal, TextInput, Button, useTheme, ActivityIndicator } f
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { searchStops } from '../../services/gtfs/stopService';
+import { stopMode, TRANSIT_MODE_ICON } from '../../data/gtfsData';
 import type { Location as AppLocation } from '../../types';
 import { normalizeSearch } from '../../utils/searchText';
 
@@ -115,6 +116,8 @@ export function LocationPickerModal({ visible, title, onSelect, onDismiss }: Pro
       <Modal
         visible={visible}
         onDismiss={handleClose}
+        // Klavye açıkken sonuçlar görünsün diye pencere ekranın üstüne yaslanır
+        style={styles.modalWrap}
         contentContainerStyle={[styles.modal, { backgroundColor: theme.colors.surface }]}
       >
         <Text style={[styles.title, { color: theme.colors.onSurface }]}>{title}</Text>
@@ -165,7 +168,7 @@ export function LocationPickerModal({ visible, title, onSelect, onDismiss }: Pro
               activeOpacity={0.7}
             >
               <MaterialCommunityIcons
-                name={item.kind === 'neighborhood' ? 'map-marker-outline' : 'bus-stop'}
+                name={item.kind === 'neighborhood' ? 'map-marker-outline' : stopMode(item.id) === 'bus' ? 'bus-stop' : TRANSIT_MODE_ICON[stopMode(item.id)]}
                 size={18}
                 color={item.kind === 'neighborhood' ? theme.colors.secondary : theme.colors.primary}
               />
@@ -193,14 +196,15 @@ export function LocationPickerModal({ visible, title, onSelect, onDismiss }: Pro
 }
 
 const styles = StyleSheet.create({
-  modal: { margin: 20, borderRadius: 20, padding: 24, maxHeight: '85%' },
+  modalWrap: { justifyContent: 'flex-start' },
+  modal: { marginHorizontal: 16, marginTop: 56, borderRadius: 20, padding: 20, maxHeight: '85%' },
   title: { fontSize: 18, fontWeight: '700', marginBottom: 16 },
   locBtn: { borderRadius: 10, marginBottom: 12 },
   locBtnContent: { height: 44 },
   error: { fontSize: 13, marginBottom: 8 },
   input: { backgroundColor: 'transparent', marginBottom: 8 },
   empty: { fontSize: 14, textAlign: 'center', paddingVertical: 16 },
-  list: { maxHeight: 340 },
+  list: { maxHeight: 300 },
   item: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -23,12 +23,30 @@ const FILTERS: { mode: RouteFilterMode; label: string; icon: string }[] = [
   { mode: 'night_safe', label: 'Gece Güvenli', icon: 'shield-moon' },
 ];
 
+type DepartOption = 'now' | 'in30' | 'in60' | 'tomorrow8';
+
+const DEPART_OPTIONS: { key: DepartOption; label: string }[] = [
+  { key: 'now', label: 'Şimdi' },
+  { key: 'in30', label: '+30 dk' },
+  { key: 'in60', label: '+1 saat' },
+  { key: 'tomorrow8', label: 'Yarın 08:00' },
+];
+
+function departDate(opt: DepartOption): Date | undefined {
+  const now = new Date();
+  if (opt === 'in30') return new Date(now.getTime() + 30 * 60_000);
+  if (opt === 'in60') return new Date(now.getTime() + 60 * 60_000);
+  if (opt === 'tomorrow8') return new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 8, 0);
+  return undefined;
+}
+
 export function RouteSearchScreen({ navigation }: Props) {
   const theme = useTheme();
   const { origin, destination, routes, setRoutes, setSelectedRoute, isLoading, setLoading, allowLongWalk } = useAppStore();
   const nightSafeMode = useAppStore(s => s.nightSafeMode);
   const [filterMode, setFilterMode] = useState<RouteFilterMode>('fastest');
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [departOpt, setDepartOpt] = useState<DepartOption>('now');
   const h = new Date().getHours();
   const isNight = h >= 22 || h < 6;
 
@@ -39,18 +57,19 @@ export function RouteSearchScreen({ navigation }: Props) {
     let cancelled = false;
     setLoading(true);
     setSearchError(null);
-    findRoutes(origin, destination, { allowLongWalk, filterMode })
+    findRoutes(origin, destination, { allowLongWalk, filterMode, departAt: departDate(departOpt) })
       .then(async r => {
         if (cancelled) return;
-        if (r.length > 0) {
+        if (r.length > 0 && departOpt === 'now') {
           const hasLive = r.some(route => (route.confidence ?? 0) > 70);
           void saveRouteCache(origin, destination, r, hasLive ? 'realtime' : 'static');
         }
         setRoutes(r);
       })
-      .catch(async () => {
+      .catch(async e => {
         if (cancelled) return;
-        const cached = await loadRouteCache(origin, destination);
+        console.warn('[RouteSearch] rota aranamadı:', e);
+        const cached = departOpt === 'now' ? await loadRouteCache(origin, destination) : null;
         if (cancelled) return;
         if (cached) {
           setRoutes(cached);
@@ -61,7 +80,7 @@ export function RouteSearchScreen({ navigation }: Props) {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [origin, destination]);
+  }, [origin, destination, departOpt]);
 
   useEffect(() => () => { setLoading(false); }, []);
 
@@ -100,15 +119,32 @@ export function RouteSearchScreen({ navigation }: Props) {
         </View>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.filterRow}>
+        <MaterialCommunityIcons name="clock-outline" size={18} color={theme.colors.onSurfaceVariant} />
+        {DEPART_OPTIONS.map(o => (
+          <Chip
+            key={o.key}
+            compact
+            selected={departOpt === o.key}
+            onPress={() => setDepartOpt(o.key)}
+            style={departOpt === o.key ? { backgroundColor: theme.colors.secondaryContainer } : undefined}
+            showSelectedOverlay
+          >
+            {o.label}
+          </Chip>
+        ))}
+      </ScrollView>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll} contentContainerStyle={styles.filterRow}>
         {FILTERS.map(f => (
           <Chip
             key={f.mode}
+            compact
             selected={filterMode === f.mode}
             onPress={() => setFilterMode(f.mode)}
             icon={f.icon}
-            style={[styles.filterChip, filterMode === f.mode && styles.filterChipSelected]}
-            selectedColor="#1A73E8"
+            style={filterMode === f.mode ? { backgroundColor: theme.colors.primaryContainer } : undefined}
+            selectedColor={filterMode === f.mode ? theme.colors.primary : undefined}
             showSelectedOverlay
           >
             {f.label}
@@ -129,7 +165,7 @@ export function RouteSearchScreen({ navigation }: Props) {
             if (origin && destination) {
               setSearchError(null);
               setLoading(true);
-              findRoutes(origin, destination, { allowLongWalk, filterMode })
+              findRoutes(origin, destination, { allowLongWalk, filterMode, departAt: departDate(departOpt) })
                 .then(r => { if (r.length > 0) { const hasLive = r.some(x => (x.confidence ?? 0) > 70); void saveRouteCache(origin, destination, r, hasLive ? 'realtime' : 'static'); } setRoutes(r); })
                 .catch(() => setSearchError('Rotalar yüklenemedi. İnternet bağlantınızı kontrol edin.'))
                 .finally(() => setLoading(false));
@@ -165,9 +201,8 @@ const styles = StyleSheet.create({
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   locationText: { fontSize: 14, fontWeight: '500', flex: 1 },
   arrow: { marginLeft: 4 },
-  filterRow: { paddingHorizontal: 16, paddingBottom: 10, gap: 8 },
-  filterChip: { marginRight: 4, height: 36 },
-  filterChipSelected: { backgroundColor: '#E8F0FE' },
+  chipScroll: { flexGrow: 0, flexShrink: 0 },
+  filterRow: { paddingHorizontal: 16, paddingBottom: 8, gap: 8, alignItems: 'center' },
   list: { padding: 16, paddingTop: 4, gap: 4, flexGrow: 0, justifyContent: 'flex-start' },
   empty: { alignItems: 'center', paddingTop: 60, gap: 12 },
   emptyText: { fontSize: 16 },

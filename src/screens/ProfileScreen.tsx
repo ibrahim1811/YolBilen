@@ -1,5 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, ScrollView, Alert } from 'react-native';
+import { currentVersionCode, currentVersionName } from '../services/update/updateService';
+import { ReportProblemModal } from '../components/common/ReportProblemModal';
 import { Text, Surface, useTheme, Avatar, Button, Divider, List, Switch } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -13,6 +15,7 @@ import type { RootStackParamList } from '../types';
 
 export function ProfileScreen() {
   const theme = useTheme();
+  const [showReport, setShowReport] = React.useState(false);
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { user, setUser, isDarkMode, toggleDarkMode, allowLongWalk, setAllowLongWalk, nightSafeMode, toggleNightSafeMode } = useAppStore();
   const [isAdmin, setIsAdmin] = React.useState(false);
@@ -135,6 +138,24 @@ export function ProfileScreen() {
           />
           <Divider />
           <List.Item
+            title="Sorun bildir"
+            description="Hata ya da yanlış bilgi gördüysen gönder"
+            titleStyle={{ color: theme.colors.onSurface }}
+            left={() => (
+              <MaterialCommunityIcons
+                name="bug-outline"
+                size={22}
+                color={theme.colors.onSurfaceVariant}
+                style={{ marginLeft: 8, alignSelf: 'center' }}
+              />
+            )}
+            right={() => (
+              <MaterialCommunityIcons name="chevron-right" size={22} color={theme.colors.onSurfaceVariant} />
+            )}
+            onPress={() => setShowReport(true)}
+          />
+          <Divider />
+          <List.Item
             title="Hakkında"
             titleStyle={{ color: theme.colors.onSurface }}
             left={() => (
@@ -154,7 +175,7 @@ export function ProfileScreen() {
             )}
             onPress={() => Alert.alert(
               'Yolbul Hakkında',
-              'Yolbul v1.0\n\nİzmir toplu taşıma rehberiniz. ESHOT hatları, sefer saatleri, rota planlama ve topluluk uyarılarıyla her yolculuğunuzu kolaylaştırır.\n\nGeliştirici: @ibrahim1811\nVersiyon: 1.0.0',
+              `Yolbul\n\nİzmir toplu taşıma rehberiniz. ESHOT, metro, tramvay, İZBAN ve vapur hatları, sefer saatleri, rota planlama ve topluluk uyarılarıyla her yolculuğunuzu kolaylaştırır.\n\nGeliştirici: @ibrahim1811\nSürüm: ${currentVersionName()} (${currentVersionCode()})`,
               [{ text: 'Tamam' }]
             )}
           />
@@ -204,6 +225,7 @@ export function ProfileScreen() {
           Çıkış Yap
         </Button>
       </ScrollView>
+      <ReportProblemModal visible={showReport} onDismiss={() => setShowReport(false)} />
     </SafeAreaView>
   );
 }

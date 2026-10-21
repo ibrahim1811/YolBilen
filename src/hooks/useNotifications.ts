@@ -8,6 +8,7 @@ import {
   addNotificationListener,
   addResponseListener,
 } from '../services/notifications/notificationService';
+import { rescheduleAllLastBusAlerts } from '../services/notifications/lastBusService';
 import { useAppStore } from '../store/useAppStore';
 import type { RootStackParamList } from '../types';
 
@@ -19,6 +20,10 @@ export function useNotifications() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const notifListener = useRef<Notifications.Subscription | null>(null);
   const responseListener = useRef<Notifications.Subscription | null>(null);
+
+  useEffect(() => {
+    rescheduleAllLastBusAlerts().catch(e => console.warn('[notifications] son sefer uyarıları yenilenemedi:', e));
+  }, []);
 
   useEffect(() => {
     if (!user || user.isGuest) return;

@@ -1,6 +1,6 @@
 import {
   collection, addDoc, getDocs, query, where, orderBy, Timestamp, doc, updateDoc, increment, deleteDoc,
-  limit,
+  limit, arrayUnion,
 } from 'firebase/firestore';
 import { db, auth } from './config';
 import type { CommunityAlert } from '../../types';
@@ -35,6 +35,7 @@ export async function postAlert(alert: Omit<CommunityAlert, 'id' | 'upvotes'>): 
     createdAt: Timestamp.fromDate(alert.createdAt),
     expiresAt: Timestamp.fromDate(alert.expiresAt),
     upvotes: 0,
+    upvoters: [],
   });
 }
 
@@ -57,7 +58,9 @@ export async function getActiveAlerts(): Promise<CommunityAlert[]> {
 }
 
 export async function upvoteAlert(alertId: string): Promise<void> {
-  await updateDoc(doc(db, 'community_alerts', alertId), { upvotes: increment(1) });
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('auth/session-expired');
+  await updateDoc(doc(db, 'community_alerts', alertId), { upvotes: increment(1), upvoters: arrayUnion(uid) });
 }
 
 export async function deleteAlert(alertId: string): Promise<void> {

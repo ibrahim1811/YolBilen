@@ -16,6 +16,7 @@ import * as Location from 'expo-location';
 import { getStops } from '../data/gtfsData';
 import { useAppStore } from '../store/useAppStore';
 import { useFavorites } from '../hooks/useFavorites';
+import { AnnouncementBanner } from '../components/home/AnnouncementBanner';
 import { useWeather } from '../hooks/useWeather';
 import { getUserJourneys, detectRoutine } from '../services/firebase/journeyService';
 import { getActiveAlerts, ALERT_LABELS, ALERT_ICONS } from '../services/firebase/alertService';
@@ -42,7 +43,7 @@ export function HomeScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const theme = useTheme();
   const { user, origin, destination, setOrigin, setDestination } = useAppStore();
-  const { favoriteLocations, favoriteLines, addLocation, removeLocation, removeLine, getLocationByType } =
+  const { loadError: favoritesLoadError, favoriteLocations, favoriteLines, addLocation, removeLocation, removeLine, getLocationByType } =
     useFavorites();
 
   const [showAddModal, setShowAddModal] = useState(false);
@@ -70,18 +71,22 @@ export function HomeScreen() {
         const { latitude, longitude } = pos.coords;
         const stops = getStops();
         if (!stops.length) return;
+        const cosLat = Math.cos((latitude * Math.PI) / 180);
         let nearestStop = stops[0];
         let minDist = Infinity;
         for (const s of stops) {
-          const d = Math.hypot(s.lat - latitude, s.lon - longitude);
+          const d = Math.hypot(s.lat - latitude, (s.lon - longitude) * cosLat);
           if (d < minDist) { minDist = d; nearestStop = s; }
         }
+        const nearestMeters = minDist * 111_320;
         setOrigin({
-          name: nearestStop.name,
+          name: nearestMeters <= 300 ? nearestStop.name : 'Konumum',
           latitude,
           longitude,
         });
-      } catch {}
+      } catch (e) {
+        console.warn('[Home] başlangıç konumu alınamadı:', e);
+      }
     })();
   }, [origin, setOrigin]);
 
@@ -142,6 +147,8 @@ export function HomeScreen() {
         </View>
 
         {/* Search Card */}
+        <AnnouncementBanner />
+
         <Surface style={[styles.searchCard, { backgroundColor: theme.colors.surface }]} elevation={2}>
           <Text style={[styles.searchTitle, { color: theme.colors.onSurface }]}>
             Nereye gidiyorsunuz?
@@ -192,6 +199,11 @@ export function HomeScreen() {
             )}
           </View>
 
+          {favoritesLoadError && (
+            <Text style={[styles.emptyHint, { color: theme.colors.error }]}>
+              Favoriler yüklenemedi. İnternet bağlantını kontrol et.
+            </Text>
+          )}
           {favoriteLocations.length === 0 && !user?.isGuest ? (
             <View style={styles.emptyFav}>
               <AddFavoriteCard onPress={() => setShowAddModal(true)} />

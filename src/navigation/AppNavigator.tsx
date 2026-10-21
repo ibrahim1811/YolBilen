@@ -21,6 +21,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useNotifications } from '../hooks/useNotifications';
 import type { RootStackParamList } from '../types';
 import { warmupRouting } from '../services/background/warmupService';
+import { UpdatePrompt } from '../components/common/UpdatePrompt';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -51,6 +52,7 @@ export function AppNavigator() {
   return (
     <NavigationContainer>
       <NotificationsBridge />
+      <UpdatePrompt />
       <Stack.Navigator
         screenOptions={{ headerShown: false }}
         initialRouteName={user === null && !onboardingDone ? 'Onboarding' : user === null ? 'Login' : 'Main'}

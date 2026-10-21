@@ -6,13 +6,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { ArrivalRow } from '../components/stop/ArrivalRow';
 import { useFavorites } from '../hooks/useFavorites';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useIsFocused } from '@react-navigation/native';
 import type { NativeStackScreenProps, NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList, StopArrival } from '../types';
 import { t } from '../i18n';
 import { getApproachingBuses, resolveIztekStopId, estimateArrivalMins, isWaitingAtTerminal, IztekError } from '../services/iztek/iztekService';
 import { getScheduledArrivalForStopId } from '../services/gtfs/routingService';
-import { getRouteName, getStopRouteDirs } from '../data/gtfsData';
+import {
+  getRouteName, getStopRouteDirs, getOrderedStopsForDir, getRailArrivalMins, getLineMode, lineTitle, stopMode, TRANSIT_MODE_ICON,
+} from '../data/gtfsData';
 import { getLineFeedbacks } from '../services/firebase/firestore';
 import * as Notifications from 'expo-notifications';
 
@@ -43,6 +45,7 @@ export function StopDetailScreen({ navigation, route }: Props) {
     ? lines
     : [...new Set((getStopRouteDirs()[stopId] ?? []).map(d => d.lineNum))];
   const requestSeq = useRef(0);
+  const isRailStop = stopMode(stopId) !== 'bus';
 
   const loadArrivals = useCallback(async () => {
     const seq = ++requestSeq.current;
@@ -60,6 +63,30 @@ export function StopDetailScreen({ navigation, route }: Props) {
         }];
       })
       .sort((a, b) => a.minutesAway - b.minutesAway);
+
+    if (isRailStop) {
+      setArrivals(
+        (getStopRouteDirs()[stopId] ?? [])
+          .flatMap(({ lineNum, dir }) => {
+            const stops = getOrderedStopsForDir(lineNum, dir);
+            if (stops[stops.length - 1]?.id === stopId) return [];
+            const first = getRailArrivalMins(lineNum, dir, stopId);
+            if (first === null || first > 180) return [];
+            const second = getRailArrivalMins(lineNum, dir, stopId, first + 1);
+            const base = {
+              lineNumber: lineNum,
+              lineName: lineTitle(lineNum),
+              direction: `${stops[stops.length - 1]?.name ?? 'Son durak'} yönü`,
+              isLive: false,
+            };
+            return second !== null && second <= 180
+              ? [{ ...base, minutesAway: first }, { ...base, minutesAway: second }]
+              : [{ ...base, minutesAway: first }];
+          })
+          .sort((a, b) => a.minutesAway - b.minutesAway)
+      );
+      return;
+    }
 
     const iztekId = resolveIztekStopId(stopId, latitude, longitude);
     if (!iztekId) {
@@ -103,13 +130,15 @@ export function StopDetailScreen({ navigation, route }: Props) {
     }).catch(e => console.warn('[StopDetail] yoğunluk verisi alınamadı:', e));
   }, [lines?.join(',')]);
 
+  const isFocused = useIsFocused();
   useEffect(() => {
+    if (!isFocused) return;
     loadArrivals();
     setCountdown(30);
     const interval = setInterval(() => setCountdown(c => (c <= 1 ? 30 : c - 1)), 1000);
     const refresh = setInterval(loadArrivals, 30_000);
     return () => { clearInterval(interval); clearInterval(refresh); };
-  }, [loadArrivals]);
+  }, [loadArrivals, isFocused]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -159,7 +188,7 @@ export function StopDetailScreen({ navigation, route }: Props) {
         {/* Durak Hero */}
         <Surface style={[styles.heroCard, { backgroundColor: theme.colors.surface }]} elevation={2}>
           <View style={[styles.heroIcon, { backgroundColor: theme.colors.primaryContainer }]}>
-            <MaterialCommunityIcons name="bus-stop" size={36} color={theme.colors.primary} />
+            <MaterialCommunityIcons name={isRailStop ? TRANSIT_MODE_ICON[stopMode(stopId)] : 'bus-stop'} size={36} color={theme.colors.primary} />
           </View>
           <Text style={[styles.stopName, { color: theme.colors.onSurface }]}>{stopName}</Text>
           <Text style={[styles.stopCoords, { color: theme.colors.onSurfaceVariant }]}>
@@ -190,10 +219,11 @@ export function StopDetailScreen({ navigation, route }: Props) {
                   lineNumber: lineNum,
                   lineName: getRouteName(lineNum) ?? lineNum,
                 })}
+                icon={getLineMode(lineNum) === 'bus' ? undefined : TRANSIT_MODE_ICON[getLineMode(lineNum)]}
                 style={[styles.lineChip, { backgroundColor: theme.colors.primaryContainer }]}
                 textStyle={[styles.lineChipText, { color: theme.colors.primary }]}
               >
-                {lineNum}
+                {getLineMode(lineNum) === 'ferry' ? getRouteName(lineNum) ?? lineNum : lineNum}
               </Chip>
             ))}
           </View>
